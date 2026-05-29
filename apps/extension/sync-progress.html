@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gentle Sync Progress</title>
+    <link rel="stylesheet" href="sync-progress.css" />
+  </head>
+
+  <body>
+    <main class="sync-app">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">ChatGPT Sync</p>
+          <h1>Gentle Sync Progress</h1>
+          <p class="lede">One page at a time, with long pauses and automatic backoff if ChatGPT says slow down.</p>
+        </div>
+        <div class="status-pill" id="statusPill">Idle</div>
+      </section>
+
+      <section class="panel progress-panel">
+        <div class="progress-header">
+          <div>
+            <p class="eyebrow">Current job</p>
+            <h2 id="jobTitle">Ready to start</h2>
+          </div>
+          <strong id="progressPercent">0%</strong>
+        </div>
+
+        <div class="progress-track" aria-label="Gentle Sync progress">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+
+        <div class="metrics">
+          <div>
+            <strong id="queuedCount">0</strong>
+            <span>Queued</span>
+          </div>
+          <div>
+            <strong id="openedCount">0</strong>
+            <span>Opened</span>
+          </div>
+          <div>
+            <strong id="cachedCount">0</strong>
+            <span>Cached</span>
+          </div>
+          <div>
+            <strong id="rateLimitCount">0</strong>
+            <span>Rate-limit pauses</span>
+          </div>
+        </div>
+
+        <p id="nextRun" class="next-run">No background job yet.</p>
+        <p id="currentTarget" class="target"></p>
+      </section>
+
+      <section class="actions">
+        <button id="startSync">Start Gentle Sync</button>
+        <button id="stopSync" class="secondary">Stop Sync</button>
+        <button id="refreshStatus" class="secondary">Refresh Status</button>
+        <button id="openOffline" class="secondary">Open Offline Reader</button>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Activity</p>
+            <h2>What is happening</h2>
+          </div>
+          <span id="updatedAt" class="muted">Waiting</span>
+        </div>
+        <ol id="eventLog" class="event-log"></ol>
+      </section>
+
+      <section class="panel safety">
+        <h2>Safety posture</h2>
+        <p>
+          This job uses your currently signed-in ChatGPT tab, opens one queued page per step, waits between steps,
+          and backs off when a rate-limit signal appears. It never asks you to paste cookies or bearer tokens.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="sync-progress.js"></script>
+  </body>
+</html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatGPT Sync Offline Reader</title>
+    <link rel="stylesheet" href="offline.css" />
+  </head>
+
+  <body>
+    <main class="offline-app">
+      <aside class="sidebar" aria-label="Offline chats">
+        <header class="sidebar-header">
+          <div>
+            <p class="eyebrow">ChatGPT Sync</p>
+            <h1>Offline chats</h1>
+          </div>
+          <button id="refreshArchive" class="icon-button" title="Refresh archive">↻</button>
+        </header>
+
+        <label class="field">
+          <span>Account</span>
+          <select id="accountSelect"></select>
+        </label>
+
+        <label class="field">
+          <span>Search</span>
+          <input id="chatSearch" type="search" placeholder="Search cached chats" />
+        </label>
+
+        <section class="summary" aria-label="Offline archive summary">
+          <div>
+            <strong id="offlineProjectCount">0</strong>
+            <span>Projects</span>
+          </div>
+          <div>
+            <strong id="offlineChatCount">0</strong>
+            <span>Chats</span>
+          </div>
+          <div>
+            <strong id="offlineMessageCount">0</strong>
+            <span>Messages</span>
+          </div>
+        </section>
+
+        <p class="last-sync" id="lastSyncedAt">Not synced yet.</p>
+
+        <nav id="chatList" class="chat-list" aria-label="Cached chat list"></nav>
+      </aside>
+
+      <section class="reader" aria-label="Selected cached conversation">
+        <header class="reader-header">
+          <div>
+            <p id="conversationMeta" class="eyebrow">Select a chat</p>
+            <h2 id="conversationTitle">Cached ChatGPT conversation</h2>
+          </div>
+          <a id="sourceLink" class="source-link" href="#" target="_blank" rel="noreferrer">Open source</a>
+        </header>
+
+        <section id="fileStrip" class="file-strip" aria-label="Cached files"></section>
+        <section id="messageList" class="message-list"></section>
+      </section>
+    </main>
+
+    <script type="module" src="offline.js"></script>
+  </body>
+</html>

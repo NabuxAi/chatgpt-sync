@@ -6,38 +6,77 @@
     <title>ChatGPT Sync</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
+
   <body>
     <main class="app-shell">
       <header class="hero">
-        <div class="badge">Local-first</div>
+        <div class="badge">Memory Bridge</div>
         <h1>ChatGPT Sync</h1>
-        <p>Back up a ChatGPT Project snapshot and rebuild it safely in another account.</p>
+        <p>Capture a project from this account, switch accounts, then restore the package safely.</p>
+
+        <div class="stats">
+          <div class="stat">
+            <strong id="projectCount">0</strong>
+            <span>Projects</span>
+          </div>
+          <div class="stat">
+            <strong id="chatCount">0</strong>
+            <span>Chats</span>
+          </div>
+          <div class="stat">
+            <strong id="messageCount">0</strong>
+            <span>Messages</span>
+          </div>
+          <div class="stat">
+            <strong id="fileCount">0</strong>
+            <span>Files</span>
+          </div>
+        </div>
       </header>
 
-      <section class="card">
-        <label for="projectTitle">Project title</label>
-        <input id="projectTitle" placeholder="Auto-detected or type manually" />
+      <section class="card" id="captureCard">
+        <h2>Capture current ChatGPT page</h2>
 
-        <label for="projectInstructions">Project instructions</label>
-        <textarea id="projectInstructions" rows="6" placeholder="Paste visible project instructions here"></textarea>
+        <div class="skeleton-list" id="skeleton">
+          <div class="skeleton wide"></div>
+          <div class="skeleton mid"></div>
+          <div class="skeleton short"></div>
+        </div>
 
-        <label for="projectNotes">Notes</label>
-        <textarea id="projectNotes" rows="4" placeholder="Anything important about this project"></textarea>
+        <label for="projectNotes">Restore notes</label>
+        <textarea id="projectNotes" rows="4" placeholder="Add anything important before switching accounts"></textarea>
 
-        <button id="createSnapshot">Create Snapshot</button>
-        <button id="downloadLast" class="secondary">Download Last Snapshot</button>
+        <button id="scanPage">Scan Page</button>
+        <button id="saveSession" class="secondary">Save to Browser Memory</button>
+        <button id="downloadJson" class="secondary">Download JSON Backup</button>
+        <button id="syncNow" class="secondary">Sync Open ChatGPT Tabs</button>
+        <button id="deepSync" class="secondary">Open Gentle Sync Progress</button>
+        <button id="openOffline" class="secondary">Open Offline Reader</button>
+
+        <p class="hint">
+          API capture uses your active ChatGPT session in this tab. It never asks you to paste cookies or tokens.
+        </p>
+        <p class="status" id="status">Open a ChatGPT Project or chat, then click Scan Page.</p>
+      </section>
+
+      <section class="card muted">
+        <h2>Detected items</h2>
+        <div class="list" id="detectedList"></div>
       </section>
 
       <section class="card muted">
         <h2>Restore mode</h2>
         <input id="restoreFile" type="file" accept="application/json,.json,.chatgpt-sync.json" />
+        <button id="loadSession" class="secondary">Load from Browser Memory</button>
+        <button id="clearSession" class="secondary">Clear Browser Memory</button>
         <pre id="restorePreview"></pre>
       </section>
 
       <footer>
-        No passwords. No cookies. No session tokens.
+        Local only. No password. No cookie export. No token storage.
       </footer>
     </main>
-    <script src="popup.js"></script>
+
+    <script type="module" src="popup.js"></script>
   </body>
 </html>
