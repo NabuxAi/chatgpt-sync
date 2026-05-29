@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatGPT Sync</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <div class="badge">Local-first</div>
+        <h1>ChatGPT Sync</h1>
+        <p>Back up a ChatGPT Project snapshot and rebuild it safely in another account.</p>
+      </header>
+
+      <section class="card">
+        <label for="projectTitle">Project title</label>
+        <input id="projectTitle" placeholder="Auto-detected or type manually" />
+
+        <label for="projectInstructions">Project instructions</label>
+        <textarea id="projectInstructions" rows="6" placeholder="Paste visible project instructions here"></textarea>
+
+        <label for="projectNotes">Notes</label>
+        <textarea id="projectNotes" rows="4" placeholder="Anything important about this project"></textarea>
+
+        <button id="createSnapshot">Create Snapshot</button>
+        <button id="downloadLast" class="secondary">Download Last Snapshot</button>
+      </section>
+
+      <section class="card muted">
+        <h2>Restore mode</h2>
+        <input id="restoreFile" type="file" accept="application/json,.json,.chatgpt-sync.json" />
+        <pre id="restorePreview"></pre>
+      </section>
+
+      <footer>
+        No passwords. No cookies. No session tokens.
+      </footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
