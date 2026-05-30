@@ -220,6 +220,13 @@ h2 {
   border-left: 1px solid var(--line);
 }
 
+.no-chats {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 10px 10px;
+}
+
 .chat-row {
   display: grid;
   width: 100%;
@@ -306,6 +313,7 @@ h2 {
 }
 
 .file-thumb {
+  position: relative;
   display: grid;
   width: 56px;
   height: 56px;
@@ -319,9 +327,20 @@ h2 {
 }
 
 .file-thumb img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.image-fallback-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 8px;
+  text-align: center;
 }
 
 .file-name {
@@ -362,10 +381,25 @@ h2 {
   justify-content: center;
 }
 
+.message-content {
+  width: 100%;
+}
+
+.user .message-content {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .bubble {
   max-width: min(760px, 100%);
   line-height: 1.68;
+  text-align: start;
+  unicode-bidi: plaintext;
   white-space: pre-wrap;
+}
+
+.bubble[dir="rtl"] {
+  text-align: right;
 }
 
 .user .bubble {
@@ -398,6 +432,79 @@ h2 {
   text-align: center;
 }
 
+.inline-files {
+  display: grid;
+  width: min(860px, calc(100% - 60px));
+  justify-self: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.inline-files-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.inline-file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.inline-file {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.inline-file-preview {
+  position: relative;
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  overflow: hidden;
+  background: var(--hover);
+}
+
+.inline-file-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--hover);
+}
+
+.inline-file-placeholder {
+  display: grid;
+  max-width: 180px;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 18px;
+  text-align: center;
+}
+
+.inline-file-placeholder strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.inline-file-caption {
+  padding: 10px;
+}
+
+.inline-file-caption a {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .chat-list .empty-state {
   margin: 8px 10px;
   box-shadow: none;
@@ -428,6 +535,10 @@ h2 {
   .message {
     padding-left: 16px;
     padding-right: 16px;
+  }
+
+  .inline-files {
+    width: calc(100% - 32px);
   }
 
   .user .bubble {

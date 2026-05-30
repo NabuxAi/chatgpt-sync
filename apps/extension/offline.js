@@ -116,7 +116,7 @@ function getVisibleProjectsWithChats() {
     groups.get(key).chats.push(chat);
   }
 
-  const allGroups = Array.from(groups.values()).filter((group) => group.chats.length);
+  const allGroups = Array.from(groups.values());
   if (!query) return allGroups;
 
   return allGroups
@@ -131,7 +131,10 @@ function getVisibleProjectsWithChats() {
         chats: projectMatches ? group.chats : matchingChats
       };
     })
-    .filter((group) => group.chats.length);
+    .filter((group) => {
+      const projectMatches = `${group.project.title || ""}`.toLowerCase().includes(query);
+      return projectMatches || group.chats.length;
+    });
 }
 
 function flattenGroups(groups) {
@@ -143,14 +146,11 @@ function selectedChatFromGroups(groups) {
 }
 
 function ensureExpandedProject(groups, selectedChat) {
-  if (selectedChat?.projectKey) {
-    expandedProjectKey = selectedChat.projectKey;
+  if (groups.some((group) => group.project.key === expandedProjectKey)) {
     return;
   }
 
-  if (!groups.some((group) => group.project.key === expandedProjectKey)) {
-    expandedProjectKey = groups[0]?.project.key || "";
-  }
+  expandedProjectKey = selectedChat?.projectKey || groups[0]?.project.key || "";
 }
 
 function projectChatCountLabel(count) {
@@ -161,17 +161,21 @@ function renderProjectGroup(group) {
   const isExpanded = group.project.key === expandedProjectKey;
   const chatsHtml = isExpanded
     ? `<div class="chat-nest">
-        ${group.chats
-          .map((chat) => {
-            const key = chatKey(chat);
-            return `
-              <button class="chat-row ${key === selectedChatKey ? "active" : ""}" data-chat-key="${escapeHtml(key)}">
-                <span class="chat-title">${escapeHtml(chat.title || "Untitled chat")}</span>
-                <span class="chat-project">${escapeHtml(formatDate(chat.updatedAt) || "Cached chat")}</span>
-              </button>
-            `;
-          })
-          .join("")}
+        ${
+          group.chats.length
+            ? group.chats
+                .map((chat) => {
+                  const key = chatKey(chat);
+                  return `
+                    <button class="chat-row ${key === selectedChatKey ? "active" : ""}" data-chat-key="${escapeHtml(key)}">
+                      <span class="chat-title" dir="auto">${escapeHtml(chat.title || "Untitled chat")}</span>
+                      <span class="chat-project">${escapeHtml(formatDate(chat.updatedAt) || "Cached chat")}</span>
+                    </button>
+                  `;
+                })
+                .join("")
+            : `<p class="no-chats">No cached chats inside this project yet.</p>`
+        }
       </div>`
     : "";
 
@@ -180,7 +184,7 @@ function renderProjectGroup(group) {
       <button class="project-row ${isExpanded ? "expanded" : ""}" data-project-key="${escapeHtml(group.project.key)}">
         <span class="project-caret">${isExpanded ? "⌄" : "›"}</span>
         <span>
-          <span class="project-name">${escapeHtml(group.project.title || "Untitled project")}</span>
+          <span class="project-name" dir="auto">${escapeHtml(group.project.title || "Untitled project")}</span>
           <span class="project-count">${escapeHtml(projectChatCountLabel(group.chats.length))}</span>
         </span>
       </button>
@@ -271,7 +275,7 @@ function renderChatList() {
   const chats = flattenGroups(groups);
   const list = $("#chatList");
 
-  if (!chats.length) {
+  if (!groups.length) {
     list.innerHTML = `<p class="empty-state">No cached projects or chats for this account yet.</p>`;
     selectedChatKey = "";
     expandedProjectKey = "";
@@ -279,7 +283,7 @@ function renderChatList() {
     return;
   }
 
-  if (!chats.some((chat) => chatKey(chat) === selectedChatKey)) {
+  if (chats.length && !chats.some((chat) => chatKey(chat) === selectedChatKey)) {
     selectedChatKey = chatKey(chats[0]);
   }
 
@@ -289,7 +293,7 @@ function renderChatList() {
   list.innerHTML = groups.map(renderProjectGroup).join("");
   wireProjectList(list, groups);
 
-  renderConversation(selectedChatFromGroups(groups));
+  renderConversation(selectedChatFromGroups(groups) || null);
 }
 
 function renderFiles(chat) {
@@ -307,7 +311,7 @@ function renderFiles(chat) {
     .map((file) => {
       const isImage = String(file.mimeType || "").startsWith("image/");
       const thumb = file.dataUrl && isImage
-        ? `<img src="${escapeHtml(file.dataUrl)}" alt="${escapeHtml(file.name || "Cached image")}" />`
+        ? `<span class="image-fallback-label">IMG</span><img src="${escapeHtml(file.dataUrl)}" alt="${escapeHtml(file.name || "Cached image")}" />`
         : escapeHtml(isImage ? "IMG" : "FILE");
       const url = sourceFileUrl(file);
       const action = url
@@ -337,23 +341,65 @@ function renderMessages(chat) {
   }
 
   if (!messages.length) {
-    $("#messageList").innerHTML = `<section class="empty-state">This chat is saved, but no messages are cached yet.</section>`;
+    $("#messageList").innerHTML = `
+      ${renderInlineFiles(chat)}
+      <section class="empty-state">This chat is saved, but no messages are cached yet.</section>
+    `;
     return;
   }
 
-  $("#messageList").innerHTML = messages
-    .map((message) => {
-      const role = message.role || "message";
-      return `
-        <article class="message ${escapeHtml(role)}">
-          <div class="bubble">
-            ${role === "assistant" || role === "message" ? `<div class="message-role">${escapeHtml(role)}</div>` : ""}
-            ${escapeHtml(message.text)}
-          </div>
-        </article>
-      `;
-    })
-    .join("");
+  $("#messageList").innerHTML = `
+    ${renderInlineFiles(chat)}
+    ${messages
+      .map((message) => {
+        const role = message.role || "message";
+        return `
+          <article class="message ${escapeHtml(role)}">
+            <div class="message-content">
+              ${role === "assistant" || role === "message" ? `<div class="message-role">${escapeHtml(role)}</div>` : ""}
+              <div class="bubble" dir="auto">${escapeHtml(message.text)}</div>
+            </div>
+          </article>
+        `;
+      })
+      .join("")}
+  `;
+}
+
+function renderInlineFiles(chat) {
+  const files = getFilesForChat(chat);
+  if (!files.length) return "";
+
+  return `
+    <section class="inline-files">
+      <p class="inline-files-title">Attachments</p>
+      <div class="inline-file-grid">
+        ${files.map(renderInlineFile).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderInlineFile(file) {
+  const isImage = String(file.mimeType || "").startsWith("image/");
+  const preview = file.dataUrl && isImage
+    ? `<span class="image-fallback-label">Image preview unavailable offline</span><img src="${escapeHtml(file.dataUrl)}" alt="${escapeHtml(file.name || "Cached image")}" />`
+    : `<div class="inline-file-placeholder">
+        <strong>${isImage ? "IMG" : "FILE"}</strong>
+        <span>${isImage ? "Image preview unavailable offline" : "File preview unavailable offline"}</span>
+      </div>`;
+  const url = sourceFileUrl(file);
+
+  return `
+    <article class="inline-file">
+      <div class="inline-file-preview">${preview}</div>
+      <div class="inline-file-caption">
+        <p class="file-name" dir="auto">${escapeHtml(file.name || file.id || "Attachment")}</p>
+        <p class="file-meta">${escapeHtml(file.mimeType || "attachment")}</p>
+        ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Open source file</a>` : ""}
+      </div>
+    </article>
+  `;
 }
 
 function renderConversation(chat) {

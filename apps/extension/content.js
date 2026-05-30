@@ -186,6 +186,24 @@
     return "";
   }
 
+  function scanVisibleFiles() {
+    return Array.from(document.querySelectorAll("main img"))
+      .map((image, index) => {
+        const name =
+          cleanText(image.getAttribute("alt")) ||
+          `Visible image ${index + 1}`;
+
+        return {
+          id: `visible-image-${index + 1}-${name}`,
+          name,
+          mimeType: "image/*",
+          width: image.naturalWidth || image.width || null,
+          height: image.naturalHeight || image.height || null,
+          previewStatus: "placeholder-only"
+        };
+      });
+  }
+
   function detectAccount() {
     const selectors = [
       '[data-testid="accounts-menu-button"]',
@@ -280,10 +298,16 @@
       if (!fileId || seen.has(fileId)) return;
       seen.add(fileId);
 
+      const mimeType = file.mime_type || file.mimeType || null;
+      const isImage =
+        String(mimeType || "").startsWith("image/") ||
+        file.content_type === "image_asset_pointer" ||
+        Boolean(file.width || file.height);
+
       files.push({
         id: fileId,
         name: file.name || file.file_name || file.filename || fileId,
-        mimeType: file.mime_type || file.mimeType || null,
+        mimeType: mimeType || (isImage ? "image/*" : null),
         sizeBytes: file.size || file.size_bytes || file.file_size_bytes || null,
         width: file.width || null,
         height: file.height || null,
@@ -386,7 +410,8 @@
       },
       projects: scanVisibleProjects(),
       chats: scanVisibleChats(),
-      messages: scanVisibleMessages()
+      messages: scanVisibleMessages(),
+      files: scanVisibleFiles()
     };
 
     try {
@@ -414,7 +439,12 @@
           ...visibleScan.chats
         ],
         messages: backendScan.messages.length ? backendScan.messages : visibleScan.messages,
-        files: backendScan.files
+        files: [
+          ...backendScan.files,
+          ...visibleScan.files.filter(
+            (visibleFile) => !backendScan.files.some((file) => file.name === visibleFile.name)
+          )
+        ]
       };
     } catch (error) {
       return {
