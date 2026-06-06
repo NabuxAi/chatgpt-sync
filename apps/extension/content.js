@@ -399,6 +399,103 @@
     return normalizeBackendConversation(await response.json(), window.location.href);
   }
 
+  function hasLoggedInDomMarkers() {
+    return Boolean(
+      document.querySelector('[data-testid="profile-button"]') ||
+      document.querySelector('[data-testid="accounts-menu-button"]') ||
+      document.querySelector('nav a[href*="/c/"]')
+    );
+  }
+
+  function hasLoggedOutDomMarkers() {
+    if (/\/auth\/(login|signup)/.test(window.location.pathname)) return true;
+
+    const loginWords = new Set([
+      "log in",
+      "login",
+      "sign in",
+      "sign up",
+      "get started for free"
+    ]);
+
+    const candidates = Array.from(
+      document.querySelectorAll('a[href*="/auth/"], button, a[role="button"]')
+    );
+
+    for (const element of candidates) {
+      const label = cleanText(element.innerText || element.getAttribute("aria-label")).toLowerCase();
+      if (label && loginWords.has(label)) return true;
+    }
+
+    return false;
+  }
+
+  async function fetchSessionUser() {
+    try {
+      const response = await fetch("/api/auth/session", {
+        credentials: "include",
+        headers: {
+          accept: "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        return { reachable: false, detail: `status ${response.status}` };
+      }
+
+      const data = await response.json().catch(() => ({}));
+      const user = data && typeof data === "object" ? data.user : null;
+
+      return { reachable: true, user: user || null };
+    } catch (error) {
+      return { reachable: false, detail: error.message };
+    }
+  }
+
+  async function checkLoginState() {
+    const url = window.location.href;
+    const session = await fetchSessionUser();
+
+    if (session.reachable && session.user) {
+      const email = cleanText(session.user.email);
+      const name = cleanText(session.user.name);
+
+      return {
+        loggedIn: true,
+        via: "session-api",
+        account: {
+          key: email || window.location.hostname,
+          label: name || email || "ChatGPT account",
+          email
+        },
+        url
+      };
+    }
+
+    if (session.reachable && !session.user) {
+      // chatgpt.com returns an empty payload when signed out -- authoritative.
+      return { loggedIn: false, via: "session-api", account: null, url };
+    }
+
+    // Session endpoint unreachable: fall back to DOM heuristics, preferring the
+    // safer "logged out" signal so we never scan an unauthenticated page.
+    if (hasLoggedOutDomMarkers()) {
+      return { loggedIn: false, via: "dom", account: null, url };
+    }
+
+    if (hasLoggedInDomMarkers()) {
+      return { loggedIn: true, via: "dom", account: detectAccount(), url };
+    }
+
+    return {
+      loggedIn: null,
+      via: "unknown",
+      account: null,
+      url,
+      detail: session.detail || "Could not determine ChatGPT login state."
+    };
+  }
+
   async function scanPage() {
     const visibleScan = {
       url: window.location.href,
@@ -455,6 +552,22 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "CHATGPT_SYNC_CHECK_LOGIN") {
+      checkLoginState()
+        .then(sendResponse)
+        .catch((error) => {
+          sendResponse({
+            loggedIn: null,
+            via: "error",
+            account: null,
+            url: window.location.href,
+            detail: error.message
+          });
+        });
+
+      return true;
+    }
+
     if (message?.type !== "CHATGPT_SYNC_SCAN_PAGE") return;
 
     scanPage()

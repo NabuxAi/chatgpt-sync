@@ -1,6 +1,6 @@
 import { AUTO_SYNC_PERIOD_MINUTES, buildMemoryPackage } from "./sync-core.js";
 import { mergeAndSaveOfflineArchive } from "./offline-vault.js";
-import { scanTabWithFallback } from "./content-script-bridge.js";
+import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.js";
 import { planDeepSyncTargets, planNewChatTargets } from "./deep-sync-planner.js";
 import {
   GENTLE_SYNC_RATE_LIMIT_BACKOFF_MINUTES,
@@ -12,6 +12,14 @@ const AUTO_SYNC_ALARM = "chatgpt-sync:auto-sync";
 const GENTLE_SYNC_ALARM = "chatgpt-sync:gentle-sync";
 const GENTLE_SYNC_STATE_KEY = "chatgpt-sync:gentle-sync-state";
 const CHATGPT_URLS = ["https://chatgpt.com/*", "https://chat.openai.com/*"];
+const CHATGPT_HOME_URL = "https://chatgpt.com/";
+const PENDING_SCAN_KEY = "chatgpt-sync:pending-scan";
+const LAST_SCAN_RESULT_KEY = "chatgpt-sync:last-scan-result";
+const PENDING_SCAN_TTL_MS = 10 * 60 * 1000;
+
+function isChatGptUrl(url = "") {
+  return /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(url);
+}
 
 async function ensureAutoSyncAlarm() {
   await chrome.alarms.create(AUTO_SYNC_ALARM, {
@@ -372,6 +380,197 @@ async function runGentleSyncStep() {
   }
 }
 
+// --- Scan-now orchestration: always target ChatGPT and confirm login -------
+
+let autoScanInFlight = false;
+
+async function findChatGptTab() {
+  const [activeTab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true,
+    url: CHATGPT_URLS
+  });
+
+  if (activeTab?.id) return activeTab;
+
+  const [anyTab] = await chrome.tabs.query({
+    url: CHATGPT_URLS
+  });
+
+  return anyTab || null;
+}
+
+async function getTabLoginState(tabId) {
+  try {
+    return await checkTabLogin(chrome, tabId);
+  } catch (error) {
+    return { loggedIn: null, via: "error", account: null, detail: error.message };
+  }
+}
+
+async function focusTab(tab) {
+  if (!tab?.id) return;
+
+  try {
+    await chrome.tabs.update(tab.id, { active: true });
+    if (tab.windowId != null) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+  } catch (_error) {
+    // Focusing is best-effort; ignore window/tab races.
+  }
+}
+
+async function scanAndCacheTab(tab, options = {}) {
+  const scanData = await scanTabWithFallback(chrome, tab.id);
+
+  if (scanData?.error) {
+    throw new Error(scanData.error);
+  }
+
+  const packageData = buildMemoryPackage(scanData, {
+    now: new Date().toISOString(),
+    notes: options.notes || ""
+  });
+
+  await mergeAndSaveOfflineArchive(packageData, {
+    now: new Date().toISOString()
+  });
+
+  return packageData;
+}
+
+async function setPendingScan(notes) {
+  await chrome.storage.session.set({
+    [PENDING_SCAN_KEY]: {
+      notes: notes || "",
+      createdAt: Date.now()
+    }
+  });
+}
+
+async function loadPendingScan() {
+  const data = await chrome.storage.session.get(PENDING_SCAN_KEY);
+  const pending = data[PENDING_SCAN_KEY];
+  if (!pending) return null;
+
+  if (Date.now() - (pending.createdAt || 0) > PENDING_SCAN_TTL_MS) {
+    await clearPendingScan();
+    return null;
+  }
+
+  return pending;
+}
+
+async function clearPendingScan() {
+  await chrome.storage.session.remove(PENDING_SCAN_KEY);
+}
+
+async function recordScanResult(result) {
+  await chrome.storage.session.set({
+    [LAST_SCAN_RESULT_KEY]: {
+      ...result,
+      at: new Date().toISOString()
+    }
+  });
+}
+
+async function loadScanResult() {
+  const data = await chrome.storage.session.get(LAST_SCAN_RESULT_KEY);
+  return data[LAST_SCAN_RESULT_KEY] || null;
+}
+
+async function clearScanResult() {
+  await chrome.storage.session.remove(LAST_SCAN_RESULT_KEY);
+}
+
+// Triggered from the popup. Guarantees the scan runs against ChatGPT: it reuses
+// an open ChatGPT tab, otherwise opens chatgpt.com, and only scans once the
+// signed-in session is confirmed.
+async function handleScanNow(options = {}) {
+  const notes = options.notes || "";
+  const existingTab = await findChatGptTab();
+
+  if (existingTab?.id) {
+    const login = await getTabLoginState(existingTab.id);
+
+    if (login.loggedIn === false) {
+      await setPendingScan(notes);
+      await focusTab(existingTab);
+      return { ok: true, status: "needs-login", tabId: existingTab.id };
+    }
+
+    const packageData = await scanAndCacheTab(existingTab, { notes });
+    await recordScanResult({
+      status: "scanned",
+      trigger: "manual",
+      account: login.account || null,
+      package: packageData
+    });
+    await clearPendingScan();
+
+    return {
+      ok: true,
+      status: "scanned",
+      account: login.account || null,
+      loginVia: login.via,
+      package: packageData
+    };
+  }
+
+  // No ChatGPT tab anywhere -> open one. The popup closes when the new tab takes
+  // focus, so the auto-scan-after-login listener finishes the job and caches the
+  // result for the next time the popup opens.
+  await setPendingScan(notes);
+  const created = await chrome.tabs.create({ url: CHATGPT_HOME_URL, active: true });
+
+  return { ok: true, status: "opening", tabId: created?.id || null };
+}
+
+// Completes a pending scan as soon as a ChatGPT tab finishes loading while the
+// user is signed in (e.g. right after they log in on a freshly opened tab).
+async function maybeAutoScanAfterLogin(tabId, tab) {
+  if (autoScanInFlight) return;
+  if (!isChatGptUrl(tab?.url || "")) return;
+
+  const pending = await loadPendingScan();
+  if (!pending) return;
+
+  autoScanInFlight = true;
+
+  try {
+    const login = await getTabLoginState(tabId);
+
+    // Still signed out: keep the request pending and wait for a later load
+    // (the redirect back from the login page fires another "complete").
+    if (login.loggedIn === false) return;
+
+    const packageData = await scanAndCacheTab(
+      { id: tabId, windowId: tab?.windowId },
+      { notes: pending.notes }
+    );
+
+    await recordScanResult({
+      status: "scanned",
+      trigger: "auto-after-login",
+      account: login.account || null,
+      package: packageData
+    });
+    await clearPendingScan();
+  } catch (_error) {
+    // Leave the pending request in place so a later load can retry.
+  } finally {
+    autoScanInFlight = false;
+  }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  if (!isChatGptUrl(tab?.url || "")) return;
+
+  maybeAutoScanAfterLogin(tabId, tab);
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   ensureAutoSyncAlarm();
 });
@@ -432,6 +631,31 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     startGentleDeepSyncFromActiveTab()
       .then((result) => {
         sendResponse({ ok: true, gentle: true, ...result });
+      })
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message?.type === "CHATGPT_SYNC_SCAN_NOW") {
+    handleScanNow({ notes: message.notes })
+      .then((result) => {
+        sendResponse(result);
+      })
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message?.type === "CHATGPT_SYNC_GET_LAST_SCAN_RESULT") {
+    loadScanResult()
+      .then(async (result) => {
+        if (result) await clearScanResult();
+        sendResponse({ ok: true, result: result || null });
       })
       .catch((error) => {
         sendResponse({ ok: false, error: error.message });

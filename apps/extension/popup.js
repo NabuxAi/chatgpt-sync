@@ -1,7 +1,4 @@
 import { saveToSession, loadFromSession, clearSession } from "./session-vault.js";
-import { mergeAndSaveOfflineArchive } from "./offline-vault.js";
-import { buildMemoryPackage } from "./sync-core.js";
-import { scanTabWithFallback } from "./content-script-bridge.js";
 
 let currentPackage = null;
 
@@ -97,23 +94,44 @@ function downloadJson(data) {
   URL.revokeObjectURL(url);
 }
 
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({
-    active: true,
-    currentWindow: true
-  });
+function applyPackage(data) {
+  if (!data) return;
 
-  return tab;
+  currentPackage = data;
+  updateStats(data);
+  renderDetectedList(data);
 }
 
-async function scanCurrentPage() {
-  const tab = await getActiveTab();
+async function requestScanFromBackground(notes) {
+  return chrome.runtime.sendMessage({
+    type: "CHATGPT_SYNC_SCAN_NOW",
+    notes
+  });
+}
 
-  if (!tab?.id) {
-    throw new Error("No active tab found.");
+// When Scan Page has to open ChatGPT or wait for login, the popup closes before
+// the background finishes. On reopen, surface whatever the background captured.
+async function loadPendingScanResult() {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "CHATGPT_SYNC_GET_LAST_SCAN_RESULT"
+    });
+
+    if (!response?.ok || !response.result?.package) return;
+
+    applyPackage(response.result.package);
+
+    const accountLabel = response.result.account?.label;
+    const who = accountLabel ? ` (${accountLabel})` : "";
+
+    setStatus(
+      response.result.trigger === "auto-after-login"
+        ? `Auto-scan after login complete${who} and cached for offline reading.`
+        : `Last ChatGPT scan loaded${who}.`
+    );
+  } catch (_error) {
+    // No cached background result; keep the default status.
   }
-
-  return scanTabWithFallback(chrome, tab.id);
 }
 
 async function runAutoSyncNow() {
@@ -131,22 +149,39 @@ async function runAutoSyncNow() {
 $("#scanPage").addEventListener("click", async () => {
   try {
     setLoading(true);
-    setStatus("Scanning ChatGPT page and same-session conversation API...");
+    setStatus("Opening ChatGPT and confirming your login...");
 
-    const scanData = await scanCurrentPage();
-    currentPackage = buildMemoryPackage(scanData, {
-      notes: $("#projectNotes").value.trim()
-    });
-    await mergeAndSaveOfflineArchive(currentPackage);
+    const result = await requestScanFromBackground($("#projectNotes").value.trim());
 
-    updateStats(currentPackage);
-    renderDetectedList(currentPackage);
+    if (!result?.ok) {
+      throw new Error(result?.error || "Scan failed.");
+    }
 
-    setStatus(
-      currentPackage.capture?.method === "chatgpt-backend-api"
-        ? "API capture complete and cached for offline reading."
-        : "Visible page scan complete and cached for offline reading."
-    );
+    if (result.status === "scanned") {
+      applyPackage(result.package);
+      setStatus(
+        result.package?.capture?.method === "chatgpt-backend-api"
+          ? "API capture complete and cached for offline reading."
+          : "Visible page scan complete and cached for offline reading."
+      );
+      return;
+    }
+
+    if (result.status === "needs-login") {
+      setStatus(
+        "Switched to your ChatGPT tab. Log in there and the scan runs automatically once you are signed in."
+      );
+      return;
+    }
+
+    if (result.status === "opening") {
+      setStatus(
+        "Opening chatgpt.com in a new tab. Log in if asked - the scan runs automatically once you are signed in."
+      );
+      return;
+    }
+
+    setStatus("ChatGPT scan requested.");
   } catch (error) {
     setStatus(`Scan failed: ${error.message}`);
   } finally {
@@ -251,3 +286,5 @@ $("#restoreFile").addEventListener("change", async (event) => {
     $("#restorePreview").textContent = `Invalid backup file: ${error.message}`;
   }
 });
+
+loadPendingScanResult();
