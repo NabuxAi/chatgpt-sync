@@ -147,6 +147,48 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.scan-bar {
+  height: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  opacity: 0;
+  max-height: 0;
+  transition: opacity 0.2s ease, max-height 0.2s ease, margin-top 0.2s ease;
+}
+
+.scan-bar.active {
+  opacity: 1;
+  max-height: 20px;
+}
+
+.scan-bar-fill {
+  position: relative;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #4cc9f0, var(--accent-2));
+  box-shadow: 0 0 16px rgba(40, 215, 163, 0.5);
+  transition: width 0.25s ease;
+}
+
+.scan-bar.active .scan-bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: translateX(-100%);
+  animation: scan-sheen 0.9s linear infinite;
+}
+
+@keyframes scan-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
 .skeleton-list {
   display: none;
   margin-top: 12px;

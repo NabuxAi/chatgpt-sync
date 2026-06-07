@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ChatGPT Sync",
   "description": "Local-first backup and assisted restore for ChatGPT Projects and visible chats.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "action": {
     "default_title": "ChatGPT Sync",
     "default_popup": "popup.html",

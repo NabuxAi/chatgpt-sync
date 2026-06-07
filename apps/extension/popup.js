@@ -146,43 +146,103 @@ async function runAutoSyncNow() {
   return response.synced || 0;
 }
 
-$("#scanPage").addEventListener("click", async () => {
-  try {
-    setLoading(true);
-    setStatus("Opening ChatGPT and confirming your login...");
+let scanBarTimer = null;
 
-    const result = await requestScanFromBackground($("#projectNotes").value.trim());
+// Short synthesized "scan" sweep using the Web Audio API (no bundled asset).
+function playScanSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(1280, now + 0.28);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.16, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.44);
+    osc.onended = () => ctx.close().catch(() => {});
+  } catch (_error) {
+    // Audio is a nice-to-have; ignore autoplay/device failures.
+  }
+}
+
+function startScanBar() {
+  const bar = $("#scanBar");
+  const fill = $("#scanBarFill");
+  if (!bar || !fill) return;
+
+  bar.classList.add("active");
+  fill.style.width = "6%";
+
+  let progress = 6;
+  window.clearInterval(scanBarTimer);
+  scanBarTimer = window.setInterval(() => {
+    progress = Math.min(92, progress + Math.random() * 11);
+    fill.style.width = `${progress}%`;
+  }, 220);
+}
+
+function finishScanBar(success) {
+  window.clearInterval(scanBarTimer);
+  const bar = $("#scanBar");
+  const fill = $("#scanBarFill");
+  if (!bar || !fill) return;
+
+  fill.style.width = success ? "100%" : "0%";
+  window.setTimeout(() => bar.classList.remove("active"), success ? 800 : 250);
+}
+
+function pluralPages(count) {
+  return `${count} page${count === 1 ? "" : "s"}`;
+}
+
+// "Scan Page" feels like a quick scan (sound + bar) but actually starts Gentle Sync.
+$("#scanPage").addEventListener("click", async () => {
+  playScanSound();
+  startScanBar();
+  setLoading(true);
+  setStatus("Scanning page...");
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: "CHATGPT_SYNC_SCAN_AND_SYNC",
+      notes: $("#projectNotes").value.trim()
+    });
 
     if (!result?.ok) {
       throw new Error(result?.error || "Scan failed.");
     }
 
-    if (result.status === "scanned") {
-      applyPackage(result.package);
-      setStatus(
-        result.package?.capture?.method === "chatgpt-backend-api"
-          ? "API capture complete and cached for offline reading."
-          : "Visible page scan complete and cached for offline reading."
-      );
-      return;
-    }
-
     if (result.status === "needs-login") {
-      setStatus(
-        "Switched to your ChatGPT tab. Log in there and the scan runs automatically once you are signed in."
-      );
+      finishScanBar(false);
+      setStatus("Switched to your ChatGPT tab. Log in there, then hit Scan Page again.");
       return;
     }
 
-    if (result.status === "opening") {
-      setStatus(
-        "Opening chatgpt.com in a new tab. Log in if asked - the scan runs automatically once you are signed in."
-      );
-      return;
-    }
+    finishScanBar(true);
 
-    setStatus("ChatGPT scan requested.");
+    const state = result.state || {};
+    const queued = state.totalTargets || state.queue?.length || 0;
+
+    if (state.status === "complete" || queued === 0) {
+      setStatus("Scan complete. This page is cached for offline reading.");
+    } else {
+      setStatus(
+        `Scan started — caching ${pluralPages(queued)} in the background. Open Gentle Sync Progress to watch.`
+      );
+    }
   } catch (error) {
+    finishScanBar(false);
     setStatus(`Scan failed: ${error.message}`);
   } finally {
     setLoading(false);
@@ -231,6 +291,12 @@ $("#deepSync").addEventListener("click", async () => {
 $("#openOffline").addEventListener("click", () => {
   chrome.tabs.create({
     url: chrome.runtime.getURL("offline.html")
+  });
+});
+
+$("#openQuickStart").addEventListener("click", () => {
+  chrome.tabs.create({
+    url: chrome.runtime.getURL("quickstart.html")
   });
 });
 

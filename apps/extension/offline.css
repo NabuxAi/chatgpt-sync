@@ -62,6 +62,12 @@ select {
   padding: 4px 10px 14px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .eyebrow,
 .field span,
 .last-sync,

@@ -527,6 +527,38 @@ async function handleScanNow(options = {}) {
   return { ok: true, status: "opening", tabId: created?.id || null };
 }
 
+// Powers the popup "Scan Page" button. It feels like a quick page scan (sound +
+// scanning bar in the popup), but it actually kicks off the thorough Gentle Sync:
+// ensure a signed-in ChatGPT tab exists, then start the gentle background job.
+async function handleScanAndSync() {
+  let tab = await findChatGptTab();
+
+  if (!tab?.id) {
+    // Open ChatGPT in the background so the popup stays alive and can show status.
+    const created = await chrome.tabs.create({ url: CHATGPT_HOME_URL, active: false });
+    await waitForTabComplete(created.id);
+    await sleep(1200);
+    tab = await chrome.tabs.get(created.id).catch(() => created);
+  }
+
+  const login = await getTabLoginState(tab.id);
+
+  if (login.loggedIn === false) {
+    await focusTab(tab);
+    return { ok: true, status: "needs-login", tabId: tab.id };
+  }
+
+  // Logged in (or login state unknown): start the gentle deep sync from this tab.
+  const state = await startGentleDeepSyncFromActiveTab();
+
+  return {
+    ok: true,
+    status: "started",
+    account: login.account || null,
+    state
+  };
+}
+
 // Completes a pending scan as soon as a ChatGPT tab finishes loading while the
 // user is signed in (e.g. right after they log in on a freshly opened tab).
 async function maybeAutoScanAfterLogin(tabId, tab) {
@@ -641,6 +673,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "CHATGPT_SYNC_SCAN_NOW") {
     handleScanNow({ notes: message.notes })
+      .then((result) => {
+        sendResponse(result);
+      })
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message?.type === "CHATGPT_SYNC_SCAN_AND_SYNC") {
+    handleScanAndSync()
       .then((result) => {
         sendResponse(result);
       })

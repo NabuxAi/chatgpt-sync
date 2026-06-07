@@ -204,37 +204,82 @@
       });
   }
 
-  function detectAccount() {
-    const selectors = [
-      '[data-testid="accounts-menu-button"]',
-      'button[aria-label*="account" i]',
-      'button[aria-label*="profile" i]',
-      'nav button',
-      'aside button'
+  function extractEmail(value) {
+    const match = String(value || "").match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+    return match ? match[0] : "";
+  }
+
+  // Labels like "Open project options for X", "Delete chat", "New project" are
+  // controls, not the account. These are what the old selector accidentally grabbed.
+  function looksLikeActionLabel(label) {
+    const text = String(label || "").toLowerCase();
+    const actionWords = [
+      "option",
+      "menu",
+      "گزینه",
+      "باز کردن",
+      "delete",
+      "حذف",
+      "rename",
+      "تغییر نام",
+      "archive",
+      "بایگانی",
+      "share",
+      "اشتراک",
+      "new chat",
+      "new project",
+      "چت جدید",
+      "settings",
+      "تنظیمات",
+      "more",
+      "بیشتر",
+      "upgrade",
+      "plans",
+      "log in",
+      "sign up"
     ];
+    return actionWords.some((word) => text.includes(word));
+  }
+
+  // DOM-based account detection. This is only a fallback now -- scanPage prefers
+  // the authenticated session API (see resolveAccount). It still avoids grabbing
+  // sidebar action buttons and prefers anything that looks like an email.
+  function detectAccount() {
     const ignored = new Set([
       "new chat",
       "search chats",
       "library",
       "apps",
       "codex",
-      "more"
+      "more",
+      "settings",
+      "help"
     ]);
+    const selectors = [
+      '[data-testid="accounts-menu-button"]',
+      '[data-testid="profile-button"]',
+      'button[aria-label*="account" i]',
+      'button[aria-label*="profile" i]'
+    ];
 
     for (const selector of selectors) {
-      const elements = Array.from(document.querySelectorAll(selector));
-
-      for (const element of elements.reverse()) {
+      for (const element of Array.from(document.querySelectorAll(selector))) {
         const label = cleanText(element.innerText || element.getAttribute("aria-label"));
+
+        const email = extractEmail(label);
+        if (email) return { key: email.toLowerCase(), label: email };
+
         const key = label.toLowerCase();
-
-        if (!label || ignored.has(key) || label.length < 2) continue;
-
-        return {
-          key: key || window.location.hostname,
-          label
-        };
+        if (label && !ignored.has(key) && label.length >= 2 && !looksLikeActionLabel(label)) {
+          return { key: key || window.location.hostname, label };
+        }
       }
+    }
+
+    // Strong signal: an email rendered anywhere in the sidebar or account menu.
+    for (const element of Array.from(document.querySelectorAll('nav *, aside *, [role="menu"] *'))) {
+      const email = extractEmail(element.textContent);
+      if (email) return { key: email.toLowerCase(), label: email };
     }
 
     return {
@@ -452,22 +497,46 @@
     }
   }
 
+  // Builds the canonical account identity from the signed-in session payload.
+  // email is the stable grouping key so the offline reader groups by real account.
+  function accountFromSessionUser(user) {
+    const email = cleanText(user?.email);
+    const name = cleanText(user?.name);
+
+    if (!email && !name) return null;
+
+    return {
+      key: (email || name).toLowerCase(),
+      label: name || email || "ChatGPT account",
+      email
+    };
+  }
+
+  // Prefer the authenticated session for account identity; only fall back to the
+  // DOM when the session API is unavailable.
+  async function resolveAccount() {
+    try {
+      const session = await fetchSessionUser();
+      if (session.reachable) {
+        const fromSession = accountFromSessionUser(session.user);
+        if (fromSession) return fromSession;
+      }
+    } catch (_error) {
+      // Ignore and fall back to DOM detection below.
+    }
+
+    return detectAccount();
+  }
+
   async function checkLoginState() {
     const url = window.location.href;
     const session = await fetchSessionUser();
 
     if (session.reachable && session.user) {
-      const email = cleanText(session.user.email);
-      const name = cleanText(session.user.name);
-
       return {
         loggedIn: true,
         via: "session-api",
-        account: {
-          key: email || window.location.hostname,
-          label: name || email || "ChatGPT account",
-          email
-        },
+        account: accountFromSessionUser(session.user) || detectAccount(),
         url
       };
     }
@@ -500,7 +569,7 @@
     const visibleScan = {
       url: window.location.href,
       capturedAt: new Date().toISOString(),
-      account: detectAccount(),
+      account: await resolveAccount(),
       project: {
         title: detectProjectTitle(),
         instructions: scanProjectInstructions()

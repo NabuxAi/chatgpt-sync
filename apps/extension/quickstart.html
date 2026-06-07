@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatGPT Sync · Quick Start</title>
+    <link rel="stylesheet" href="quickstart.css" />
+  </head>
+
+  <body>
+    <div class="aurora" aria-hidden="true"></div>
+
+    <main class="stage">
+      <section class="panel" aria-labelledby="qsTitle">
+        <button id="closeQuickStart" class="close-button" title="Close" aria-label="Close">×</button>
+
+        <header class="panel-head">
+          <span class="badge"><span class="dot"></span> Quick Start</span>
+          <h1 id="qsTitle">Get started with ChatGPT&nbsp;Sync</h1>
+          <p class="lede">
+            Back up your ChatGPT Projects and chats locally, read them offline, and move them
+            between accounts — in four steps. Everything stays in your browser.
+          </p>
+        </header>
+
+        <div class="divider"></div>
+
+        <p class="section-label">How it works</p>
+
+        <ol class="steps">
+          <li class="step">
+            <div class="step-icon">1</div>
+            <div class="step-body">
+              <h2>Capture a page</h2>
+              <p>
+                Click <strong>Scan Page</strong> in the popup. ChatGPT Sync opens ChatGPT (if it
+                isn't already), waits until you're <strong>signed in</strong>, then captures the
+                current project, chat links, and visible messages.
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-icon">2</div>
+            <div class="step-body">
+              <h2>Back up everything</h2>
+              <p>
+                Run <strong>Start Gentle Background Sync</strong> to open each chat with safe delays
+                and cache its messages for offline reading. Use <strong>Sync Open ChatGPT Tabs</strong>
+                for tabs you already have open.
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-icon">3</div>
+            <div class="step-body">
+              <h2>Read it offline</h2>
+              <p>
+                Open the <strong>Offline Reader</strong> to browse cached projects, chats, and
+                messages with no network — grouped by the account they came from.
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-icon">4</div>
+            <div class="step-body">
+              <h2>Move to another account</h2>
+              <p>
+                <strong>Save to Browser Memory</strong> or <strong>Download JSON</strong>, switch
+                accounts, then follow the guided restore checklist to rebuild the project safely.
+              </p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="actions">
+          <button id="openChatGpt" class="btn btn-primary">Open ChatGPT</button>
+          <button id="openOfflineReader" class="btn btn-ghost">Open Offline Reader</button>
+        </div>
+
+        <div class="note">
+          <span class="note-icon">ⓘ</span>
+          <span>
+            Local-first. ChatGPT Sync never asks for — or stores — your password, session cookie,
+            access token, or API key.
+          </span>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="quickstart.js"></script>
+  </body>
+</html>

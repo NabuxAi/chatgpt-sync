@@ -1,4 +1,4 @@
-import { loadOfflineArchive } from "./offline-vault.js";
+import { loadOfflineArchive, clearOfflineArchive } from "./offline-vault.js";
 import { summarizeArchive } from "./sync-core.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -426,6 +426,19 @@ async function renderOfflineArchive() {
 
 $("#refreshArchive").addEventListener("click", () => {
   renderOfflineArchive();
+});
+
+$("#clearArchive").addEventListener("click", async () => {
+  const confirmed = window.confirm(
+    "Clear all cached chats from this browser? This removes the offline archive so you can re-scan from scratch. It does not touch your ChatGPT account."
+  );
+  if (!confirmed) return;
+
+  await clearOfflineArchive();
+  selectedAccountKey = "";
+  selectedChatKey = "";
+  expandedProjectKey = "";
+  await renderOfflineArchive();
 });
 
 $("#accountSelect").addEventListener("change", (event) => {

@@ -1,13 +1,17 @@
 :root {
   color-scheme: dark;
-  --bg: #090b12;
-  --panel: #121725;
-  --panel-soft: #171e2f;
+  --bg-0: #04060d;
+  --bg-1: #080c17;
+  --panel: rgba(18, 23, 37, 0.72);
+  --panel-soft: rgba(23, 30, 47, 0.66);
   --text: #f4f7fb;
   --muted: #aeb8c8;
+  --muted-soft: #7c879d;
   --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.16);
   --accent: #7c5cff;
   --accent-2: #28d7a3;
+  --accent-3: #4cc9f0;
   --warn: #f7b955;
   --danger: #ff6b6b;
 }
@@ -17,38 +21,90 @@
 }
 
 body {
+  position: relative;
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(124, 92, 255, 0.34), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(40, 215, 163, 0.18), transparent 30%),
-    var(--bg);
+  overflow-x: hidden;
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(1200px 640px at 50% -12%, rgba(56, 120, 255, 0.26), transparent 60%),
+    radial-gradient(900px 600px at 90% 0%, rgba(124, 92, 255, 0.18), transparent 55%),
+    linear-gradient(180deg, var(--bg-1), var(--bg-0));
+  background-attachment: fixed;
+}
+
+/* Slow drifting color clouds behind the glass */
+.aurora {
+  position: fixed;
+  inset: -25% -15% auto -15%;
+  height: 70vh;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 60% at 25% 30%, rgba(40, 215, 163, 0.16), transparent 70%),
+    radial-gradient(42% 64% at 72% 38%, rgba(76, 201, 240, 0.16), transparent 70%),
+    radial-gradient(40% 60% at 50% 70%, rgba(124, 92, 255, 0.16), transparent 70%);
+  filter: blur(34px);
+  animation: aurora-float 16s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-float {
+  0% { transform: translate3d(-3%, -2%, 0) scale(1); }
+  100% { transform: translate3d(4%, 3%, 0) scale(1.08); }
+}
+
+/* Faint technical grid, fading out toward the bottom */
+.grid-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(circle at 50% 18%, #000 0%, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 18%, #000 0%, transparent 72%);
 }
 
 button {
   border: 0;
   border-radius: 14px;
-  background: linear-gradient(135deg, var(--accent), #4cc9f0);
+  background: linear-gradient(135deg, var(--accent), var(--accent-3));
   color: white;
   cursor: pointer;
   font: inherit;
   font-weight: 800;
   padding: 13px 16px;
+  box-shadow: 0 10px 30px rgba(124, 92, 255, 0.32);
+  transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
 }
 
 button.secondary {
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .sync-app {
+  position: relative;
+  z-index: 1;
   width: min(1080px, calc(100% - 32px));
   margin: 0 auto;
   padding: 34px 0 56px;
@@ -56,10 +112,16 @@ button:disabled {
 
 .hero,
 .panel {
-  border: 1px solid var(--line);
+  position: relative;
+  border: 1px solid var(--line-strong);
   border-radius: 24px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.045));
-  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.34);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow: hidden;
 }
 
 .hero {
@@ -67,16 +129,29 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  padding: 26px;
+  padding: 28px;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -140px;
+  right: -120px;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(56, 120, 255, 0.3), transparent 65%);
+  pointer-events: none;
 }
 
 .panel {
   margin-top: 18px;
-  padding: 22px;
+  padding: 24px;
 }
 
 .progress-panel {
-  background: var(--panel);
+  background:
+    linear-gradient(160deg, rgba(124, 92, 255, 0.08), rgba(40, 215, 163, 0.04)),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
 }
 
 .eyebrow,
@@ -93,8 +168,9 @@ button:disabled {
   margin: 0 0 6px;
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: var(--muted-soft);
 }
 
 h1,
@@ -104,12 +180,19 @@ p {
 }
 
 h1 {
-  font-size: clamp(30px, 5vw, 52px);
-  line-height: 1;
+  font-size: clamp(32px, 5vw, 54px);
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(180deg, #ffffff, #c6d4ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 h2 {
   font-size: 20px;
+  font-weight: 700;
 }
 
 .lede {
@@ -120,26 +203,58 @@ h2 {
 }
 
 .status-pill {
-  min-width: 118px;
-  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-width: 128px;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 9px 13px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px 16px;
   text-align: center;
   font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.status-pill::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08);
 }
 
 .status-pill.queued,
-.status-pill.syncing {
+.status-pill.syncing,
+.status-pill.complete {
   color: var(--accent-2);
+  border-color: rgba(40, 215, 163, 0.4);
+  background: rgba(40, 215, 163, 0.1);
 }
 
 .status-pill.backing-off {
   color: var(--warn);
+  border-color: rgba(247, 185, 85, 0.4);
+  background: rgba(247, 185, 85, 0.1);
 }
 
-.status-pill.complete {
-  color: var(--accent-2);
+.status-pill.stopped {
+  color: var(--danger);
+  border-color: rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.status-pill.queued::before,
+.status-pill.syncing::before {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(40, 215, 163, 0.5); opacity: 1; }
+  50% { box-shadow: 0 0 0 6px rgba(40, 215, 163, 0); opacity: 0.55; }
 }
 
 .progress-header,
@@ -151,26 +266,53 @@ h2 {
 }
 
 #progressPercent {
-  font-size: 42px;
+  font-size: 46px;
   line-height: 1;
+  font-weight: 800;
+  background: linear-gradient(120deg, var(--accent-3), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .progress-track {
-  height: 18px;
+  position: relative;
+  height: 22px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.32);
-  margin: 22px 0 18px;
+  background: rgba(0, 0, 0, 0.4);
+  margin: 22px 0 20px;
 }
 
 .progress-fill {
+  position: relative;
   width: 0%;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), #4cc9f0, var(--accent-2));
-  box-shadow: 0 0 28px rgba(40, 215, 163, 0.38);
-  transition: width 320ms ease;
+  background: linear-gradient(90deg, var(--accent), var(--accent-3), var(--accent-2));
+  background-size: 200% 100%;
+  box-shadow: 0 0 26px rgba(40, 215, 163, 0.45);
+  transition: width 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: flow 3s linear infinite;
+}
+
+@keyframes flow {
+  to { background-position: 200% 0; }
+}
+
+/* Moving sheen to make the bar feel alive while scanning */
+.progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: bar-sheen 1.6s ease-in-out infinite;
+}
+
+@keyframes bar-sheen {
+  to { transform: translateX(100%); }
 }
 
 .metrics {
@@ -180,15 +322,37 @@ h2 {
 }
 
 .metrics div {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.045);
-  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 16px;
+  overflow: hidden;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.metrics div::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  opacity: 0.7;
+}
+
+.metrics div:hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .metrics strong {
   display: block;
-  font-size: 28px;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .metrics span {
@@ -203,6 +367,7 @@ h2 {
 .target {
   overflow-wrap: anywhere;
   margin-top: 8px;
+  font-size: 13px;
 }
 
 .actions {
@@ -221,14 +386,23 @@ h2 {
 }
 
 .event-log li {
+  position: relative;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-left: 2px solid rgba(40, 215, 163, 0.55);
+  border-radius: 14px;
   background: var(--panel-soft);
-  padding: 13px 14px;
+  padding: 13px 15px;
+  animation: event-in 0.32s ease both;
+}
+
+@keyframes event-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .event-log strong {
   display: block;
+  font-weight: 700;
 }
 
 .event-log p {
@@ -242,6 +416,7 @@ h2 {
   display: block;
   font-size: 11px;
   margin-top: 6px;
+  color: var(--muted-soft);
 }
 
 .safety p {
