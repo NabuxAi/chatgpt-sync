@@ -222,10 +222,6 @@ function wireProjectList(list: HTMLElement, groups: ProjectGroup[]): void {
   }
 }
 
-function getVisibleChats(): ChatRecord[] {
-  return flattenGroups(getVisibleProjectsWithChats());
-}
-
 function getMessagesForChat(chat: ChatRecord) {
   const key = chatKey(chat);
   return accountItems(archive?.messages || []).filter(

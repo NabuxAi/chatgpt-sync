@@ -104,13 +104,6 @@ function applyPackage(data: MemoryPackage | null): void {
   renderDetectedList(data);
 }
 
-async function requestScanFromBackground(notes: string): Promise<any> {
-  return chrome.runtime.sendMessage({
-    type: "CHATGPT_SYNC_SCAN_NOW",
-    notes
-  });
-}
-
 // When Scan Page has to open ChatGPT or wait for login, the popup closes before
 // the background finishes. On reopen, surface whatever the background captured.
 async function loadPendingScanResult(): Promise<void> {
