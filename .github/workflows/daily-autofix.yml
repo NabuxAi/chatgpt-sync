@@ -1,0 +1,153 @@
+name: Daily autofix
+
+# An autonomous maintenance bot. Once a day it:
+#   1. picks ONE small, safe improvement from the roadmap / good-first-issues,
+#   2. opens a tracking issue,
+#   3. implements it on a branch and opens a pull request,
+#   4. re-runs `npm run health-check`, and merges the PR only if it passes.
+#
+# REQUIRED SETUP (see docs/automation.md):
+#   - Add a repository secret `ANTHROPIC_API_KEY` (or swap it for
+#     `CLAUDE_CODE_OAUTH_TOKEN`). Without it the run no-ops with an error.
+#   - Settings → Actions → General → Workflow permissions:
+#       * "Read and write permissions"
+#       * enable "Allow GitHub Actions to create and approve pull requests".
+#
+# To pause the bot: disable this workflow in the Actions tab, or delete the file.
+# To require human review instead of auto-merge: delete the final "Validate and
+# merge" step — the bot will then only open issues + PRs for you to review.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # every day at 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Optional: a specific improvement for the bot to work on"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: daily-autofix
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git identity
+        run: |
+          git config user.name "chatgpt-sync-bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Pick a task, implement it, and open a PR
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are an autonomous maintenance bot for "ChatGPT Sync" — a local-first
+            Manifest V3 browser extension written in TypeScript. Make ONE small,
+            safe, valuable improvement today, open a pull request for it, and record
+            the PR number. Follow these steps exactly:
+
+            1. Read README.md, CONTRIBUTING.md (especially "Security principles"),
+               the roadmap, and the relevant source under apps/extension/ and
+               scripts/ so you understand the codebase and its rules.
+
+            2. Choose ONE task, preferring in order:
+               a. A concrete README roadmap item or CONTRIBUTING "good first issue"
+                  (e.g. user-configurable sync interval, cross-platform live runner,
+                  offline image-preview caching, more tests for under-tested modules,
+                  converting scripts/build-release.mjs to TypeScript).
+               b. A small, well-scoped bug fix, test, or docs improvement you can
+                  fully verify.
+               Keep it SMALL — one logical change. No large refactors, no dependency
+               upgrades, nothing you cannot verify in this run. If a manual hint was
+               given, prefer it: "${{ inputs.task }}".
+
+            3. HARD SAFETY RULES — never violate:
+               - Never add code that reads, stores, transmits, or asks for passwords,
+                 cookies, bearer tokens, session strings, or API keys. Honour the
+                 security principles in CONTRIBUTING.md. If a task would require that,
+                 choose a different task.
+               - Do not modify any workflow under .github/workflows/, and do not
+                 delete tests.
+               - Do not broaden manifest.json permissions without a clear,
+                 task-justified reason.
+
+            4. Ensure the tracking label exists, then open a tracking issue BEFORE
+               coding and capture its number:
+                 gh label create automated-improvement \
+                   --description "Opened by the daily autofix bot" --color 1d76db || true
+                 gh issue create --title "<concise title>" \
+                   --body "<what & why>" --label automated-improvement
+
+            5. Create a branch named auto/<yyyymmdd>-<short-slug>, implement the
+               change with small focused edits, and add or update a unit test
+               whenever you change behaviour.
+
+            6. Verify: run `npm run health-check` and iterate until it is fully green
+               (type-check, lint, syntax, manifest, tests, audit). If you cannot get
+               there with a clean, small change, STOP: comment your findings on the
+               issue, do NOT open a PR, and do NOT create the .auto-pr-number file.
+
+            7. Commit with a clear imperative message, push the branch, and open a
+               non-draft PR that closes the issue:
+                 gh pr create --title "<title>" \
+                   --body "Closes #<issue>. <honest summary of what changed and why>" \
+                   --label automated-improvement
+
+            8. Finally, write ONLY the new PR number to .auto-pr-number in the repo
+               root:
+                 gh pr view --json number -q .number > .auto-pr-number
+               If you did not open a PR, do not create that file.
+          claude_args: |
+            --max-turns 50
+            --model claude-sonnet-4-6
+            --allowedTools "Read,Edit,Write,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh:*)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate and auto-merge the bot's PR
+        if: ${{ success() && hashFiles('.auto-pr-number') != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="$(tr -dc '0-9' < .auto-pr-number)"
+          if [ -z "$PR" ]; then
+            echo "No PR number recorded; nothing to merge."
+            exit 0
+          fi
+          echo "Validating PR #$PR before merge..."
+          gh pr checkout "$PR"
+          npm ci
+          if npm run health-check; then
+            if gh pr merge "$PR" --squash --delete-branch; then
+              echo "Merged PR #$PR."
+            else
+              gh pr comment "$PR" --body "🤖 Could not auto-merge (branch protection or required reviews?). Leaving this PR open for a human to merge."
+              echo "Merge blocked; left PR #$PR open."
+            fi
+          else
+            gh pr comment "$PR" --body "🤖 Auto-merge skipped: \`npm run health-check\` failed on the latest revision. Leaving this PR open for human review."
+            echo "Health check failed; left PR #$PR open."
+          fi

@@ -311,11 +311,12 @@ explicitly in your PR description so reviewers can check it against these rules.
 
 ## Building release packages
 
-The extension ships unbundled, but for distribution we package it per browser with
-a single dependency-free script:
+For distribution we compile the extension and package it per browser with a
+single command (it runs `npm run build` first to produce `apps/extension/dist/`,
+then bundles that compiled output):
 
 ```bash
-npm run build      # writes packages to ./dist
+npm run build:release   # compiles, then writes packages to ./dist
 ```
 
 This produces, for the version in `apps/extension/manifest.json`:
@@ -327,7 +328,8 @@ This produces, for the version in `apps/extension/manifest.json`:
 | `chatgpt-sync-firefox-<version>.xpi` | **Experimental** Firefox build (see the [Firefox port note](#good-first-issues)). |
 | `SHA256SUMS.txt` | Checksums for the artifacts above. |
 
-Test files (`*.test.js`) are automatically excluded from the packages.
+Packages are built from the compiled `apps/extension/dist/`, which contains only
+the emitted JavaScript and static assets — never TypeScript source or test files.
 
 ### CRX signing key
 

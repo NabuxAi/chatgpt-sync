@@ -121,6 +121,10 @@ npm run health-check
 
 You can also run ESLint on its own with `npx eslint .`.
 
+See [`docs/automation.md`](docs/automation.md) for all CI/CD workflows — pull-request
+CI, the daily health check, and the optional **daily autofix bot** that opens and
+merges small improvement PRs on its own.
+
 ## For developers
 
 This is a local-first Manifest V3 extension written in **TypeScript**. The only
