@@ -28,6 +28,32 @@ This is **not** a credential harvester and does not ask for:
 
 This is also **not** claiming native ChatGPT database migration. A true one-click native restore of Projects would require official OpenAI support or an officially documented API.
 
+## Install
+
+Grab the latest packages from the [**Releases**](../../releases) page.
+
+### Chrome, Edge, Brave, Opera, Vivaldi (Chromium)
+
+All Chromium-based browsers share one package.
+
+1. Download `chatgpt-sync-chrome-<version>.zip` and unzip it.
+2. Open `chrome://extensions` (or `edge://`, `brave://`, `opera://`).
+3. Enable **Developer mode** and click **Load unpacked**.
+4. Select the unzipped folder.
+
+> A signed `chatgpt-sync-chrome-<version>.crx` is also attached for managed/enterprise
+> installs. Note that modern Chrome blocks drag-and-drop CRX installs for ordinary
+> users — for everyday use prefer the unpacked ZIP (or the Web Store, once published).
+
+### Firefox (experimental)
+
+`chatgpt-sync-firefox-<version>.xpi` is published as an **experimental** build. The
+runtime still targets Chrome APIs, so it is not yet verified on Firefox — it exists
+to bootstrap a community port. See the
+[Firefox port note](CONTRIBUTING.md#good-first-issues) if you'd like to help.
+
+Verify any download against `SHA256SUMS.txt` from the same release.
+
 ## Current MVP
 
 The current MVP is an assisted memory bridge:

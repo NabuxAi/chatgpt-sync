@@ -25,6 +25,7 @@ welcome contribution.
 - [End-to-end / live runner](#end-to-end--live-runner)
 - [Coding standards](#coding-standards)
 - [Security principles (please read)](#security-principles-please-read)
+- [Building release packages](#building-release-packages)
 - [Commit & pull request guidelines](#commit--pull-request-guidelines)
 - [Good first issues](#good-first-issues)
 
@@ -308,6 +309,49 @@ explicitly in your PR description so reviewers can check it against these rules.
 
 ---
 
+## Building release packages
+
+The extension ships unbundled, but for distribution we package it per browser with
+a single dependency-free script:
+
+```bash
+npm run build      # writes packages to ./dist
+```
+
+This produces, for the version in `apps/extension/manifest.json`:
+
+| Artifact | For |
+| --- | --- |
+| `chatgpt-sync-chrome-<version>.zip` | Universal Chromium package (Chrome, Edge, Brave, Opera, Vivaldi) — load unpacked or upload to a store. |
+| `chatgpt-sync-chrome-<version>.crx` | Signed CRX3 for Chrome (managed/enterprise installs). |
+| `chatgpt-sync-firefox-<version>.xpi` | **Experimental** Firefox build (see the [Firefox port note](#good-first-issues)). |
+| `SHA256SUMS.txt` | Checksums for the artifacts above. |
+
+Test files (`*.test.js`) are automatically excluded from the packages.
+
+### CRX signing key
+
+The CRX is signed with an RSA key resolved in this order: the `CRX_PRIVATE_KEY`
+env var → `dist/chatgpt-sync.pem` → a freshly generated key (written to
+`dist/chatgpt-sync.pem`). The signing key **determines the extension ID**, so reuse
+the same key for every release. Never commit it — `dist/` is gitignored.
+
+### Cutting a release
+
+Releases are automated by [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+1. Bump the `version` in `apps/extension/manifest.json` (and `package.json`).
+2. Commit, then tag and push:
+   ```bash
+   git tag v0.3.1
+   git push origin v0.3.1
+   ```
+3. The workflow runs the tests, builds every browser package, and opens a **draft**
+   GitHub Release with the artifacts attached. Review the notes and publish it.
+
+To keep a stable Chrome extension ID across releases, add the PEM contents of your
+signing key as a repository secret named `CRX_PRIVATE_KEY`.
+
 ## Commit & pull request guidelines
 
 1. **Branch** off `main` with a descriptive name, e.g.
@@ -341,6 +385,12 @@ Looking for a place to start? These come straight from the
 - 🔒 **Optional encrypted local vault** — encrypt the offline archive at rest.
 - 🖥️ **Make the live runner cross-platform** — auto-detect the browser instead of
   the hard-coded Brave path in `scripts/live-extension-runner.ts`.
+  the hard-coded Brave path in `scripts/live-extension-runner.mjs`.
+- 🦊 **Firefox port** — the build already emits an experimental `.xpi`, but the
+  runtime calls `chrome.*` promise APIs and uses a service-worker background, which
+  Firefox does not fully support. Adopting
+  [`webextension-polyfill`](https://github.com/mozilla/webextension-polyfill) (or
+  switching to `browser.*`) and verifying the flows on Firefox would make it real.
 - 🧪 **Add tests** for any module that feels under-covered.
 - 🌍 **Translate the docs** (including this guide) into other languages.
 
