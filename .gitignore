@@ -1,2 +1,4 @@
+node_modules/
+apps/extension/dist/
 tmp/
 health-report.md

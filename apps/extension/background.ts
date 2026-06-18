@@ -1,12 +1,20 @@
-import { AUTO_SYNC_PERIOD_MINUTES, buildMemoryPackage } from "./sync-core.js";
-import { mergeAndSaveOfflineArchive } from "./offline-vault.js";
-import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.js";
-import { planDeepSyncTargets, planNewChatTargets } from "./deep-sync-planner.js";
+import { AUTO_SYNC_PERIOD_MINUTES, buildMemoryPackage } from "./sync-core.ts";
+import { mergeAndSaveOfflineArchive } from "./offline-vault.ts";
+import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.ts";
+import { planDeepSyncTargets, planNewChatTargets } from "./deep-sync-planner.ts";
 import {
   GENTLE_SYNC_RATE_LIMIT_BACKOFF_MINUTES,
   GENTLE_SYNC_STEP_DELAY_MINUTES,
   packageHitRateLimit
-} from "./gentle-sync-policy.js";
+} from "./gentle-sync-policy.ts";
+import type {
+  Account,
+  GentleSyncEvent,
+  GentleSyncState,
+  LoginState,
+  MemoryPackage,
+  SyncTarget
+} from "./types.ts";
 
 const AUTO_SYNC_ALARM = "chatgpt-sync:auto-sync";
 const GENTLE_SYNC_ALARM = "chatgpt-sync:gentle-sync";
@@ -17,28 +25,40 @@ const PENDING_SCAN_KEY = "chatgpt-sync:pending-scan";
 const LAST_SCAN_RESULT_KEY = "chatgpt-sync:last-scan-result";
 const PENDING_SCAN_TTL_MS = 10 * 60 * 1000;
 
-function isChatGptUrl(url = "") {
+interface PendingScan {
+  notes: string;
+  createdAt: number;
+}
+
+interface ScanResult {
+  status: string;
+  trigger: string;
+  account: Account | null;
+  package: MemoryPackage;
+}
+
+function isChatGptUrl(url = ""): boolean {
   return /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(url);
 }
 
-async function ensureAutoSyncAlarm() {
+async function ensureAutoSyncAlarm(): Promise<void> {
   await chrome.alarms.create(AUTO_SYNC_ALARM, {
     periodInMinutes: AUTO_SYNC_PERIOD_MINUTES
   });
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function waitForTabComplete(tabId, timeoutMs = 15000) {
+function waitForTabComplete(tabId: number | undefined, timeoutMs = 15000): Promise<void> {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
       resolve();
     }, timeoutMs);
 
-    function listener(updatedTabId, changeInfo) {
+    function listener(updatedTabId: number, changeInfo: { status?: string }): void {
       if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
 
       clearTimeout(timeout);
@@ -50,8 +70,8 @@ function waitForTabComplete(tabId, timeoutMs = 15000) {
   });
 }
 
-async function scanTab(tab) {
-  if (!tab?.id) return null;
+async function scanTab(tab: chrome.tabs.Tab): Promise<MemoryPackage | null> {
+  if (!tab.id) return null;
 
   try {
     const scanData = await scanTabWithFallback(chrome, tab.id);
@@ -66,18 +86,18 @@ async function scanTab(tab) {
   }
 }
 
-async function loadGentleSyncState() {
+async function loadGentleSyncState(): Promise<GentleSyncState | null> {
   const data = await chrome.storage.local.get(GENTLE_SYNC_STATE_KEY);
-  return data[GENTLE_SYNC_STATE_KEY] || null;
+  return (data[GENTLE_SYNC_STATE_KEY] as GentleSyncState) || null;
 }
 
-async function saveGentleSyncState(state) {
+async function saveGentleSyncState(state: Partial<GentleSyncState>): Promise<void> {
   await chrome.storage.local.set({
     [GENTLE_SYNC_STATE_KEY]: state
   });
 }
 
-async function scheduleGentleSyncStep(delayInMinutes = GENTLE_SYNC_STEP_DELAY_MINUTES) {
+async function scheduleGentleSyncStep(delayInMinutes = GENTLE_SYNC_STEP_DELAY_MINUTES): Promise<string> {
   const delayWithJitter = delayInMinutes + Math.random() * 0.75;
   await chrome.alarms.create(GENTLE_SYNC_ALARM, {
     delayInMinutes: delayWithJitter
@@ -85,7 +105,11 @@ async function scheduleGentleSyncStep(delayInMinutes = GENTLE_SYNC_STEP_DELAY_MI
   return new Date(Date.now() + delayWithJitter * 60 * 1000).toISOString();
 }
 
-function appendGentleSyncEvent(state, label, detail = "") {
+function appendGentleSyncEvent(
+  state: { events?: GentleSyncEvent[] },
+  label: string,
+  detail = ""
+): GentleSyncEvent[] {
   return [
     ...(state.events || []),
     {
@@ -96,7 +120,7 @@ function appendGentleSyncEvent(state, label, detail = "") {
   ].slice(-30);
 }
 
-async function clearGentleSyncJob(status = "stopped") {
+async function clearGentleSyncJob(status = "stopped"): Promise<void> {
   const state = await loadGentleSyncState();
   await chrome.alarms.clear(GENTLE_SYNC_ALARM);
   await saveGentleSyncState({
@@ -107,7 +131,7 @@ async function clearGentleSyncJob(status = "stopped") {
   });
 }
 
-export async function runAutoSync() {
+export async function runAutoSync(): Promise<number> {
   const tabs = await chrome.tabs.query({
     url: CHATGPT_URLS
   });
@@ -127,7 +151,7 @@ export async function runAutoSync() {
   return synced;
 }
 
-async function openTargetAndScan(target) {
+async function openTargetAndScan(target: SyncTarget): Promise<MemoryPackage | null> {
   const tab = await chrome.tabs.create({
     url: target.url,
     active: false
@@ -138,7 +162,7 @@ async function openTargetAndScan(target) {
     await sleep(target.waitMs);
     return await scanTab(tab);
   } finally {
-    if (tab?.id) {
+    if (tab.id) {
       await chrome.tabs.remove(tab.id);
     }
   }
@@ -174,7 +198,7 @@ export async function runDeepSyncFromActiveTab() {
   let synced = 1;
   let opened = 0;
   let messages = activePackage.messages?.length || 0;
-  const targetReports = [];
+  const targetReports: Array<{ kind: string; url: string; chats: number; messages: number }> = [];
 
   for (let index = 0; index < targets.length; index += 1) {
     const target = targets[index];
@@ -212,7 +236,7 @@ export async function runDeepSyncFromActiveTab() {
   };
 }
 
-export async function startGentleDeepSyncFromActiveTab() {
+export async function startGentleDeepSyncFromActiveTab(): Promise<GentleSyncState> {
   const [activeChatGptTab] = await chrome.tabs.query({
     active: true,
     currentWindow: true,
@@ -246,12 +270,12 @@ export async function startGentleDeepSyncFromActiveTab() {
     (target) => target.url !== activeTab.url
   );
 
-  let state = {
+  const state: GentleSyncState = {
     active: true,
     status: targets.length ? "queued" : "complete",
     queue: targets,
     totalTargets: targets.length,
-    seenUrls: [activeTab.url, ...targets.map((target) => target.url)].filter(Boolean),
+    seenUrls: [activeTab.url, ...targets.map((target) => target.url)].filter(Boolean) as string[],
     synced: 1,
     opened: 0,
     messages: activePackage.messages?.length || 0,
@@ -280,7 +304,7 @@ export async function startGentleDeepSyncFromActiveTab() {
   return state;
 }
 
-async function runGentleSyncStep() {
+async function runGentleSyncStep(): Promise<void> {
   const state = await loadGentleSyncState();
   if (!state?.active || !state.queue?.length) {
     await clearGentleSyncJob("complete");
@@ -336,7 +360,7 @@ async function runGentleSyncStep() {
       }
     }
 
-    const nextState = {
+    const nextState: GentleSyncState = {
       ...state,
       status: nextQueue.length ? "queued" : "complete",
       active: Boolean(nextQueue.length),
@@ -384,7 +408,7 @@ async function runGentleSyncStep() {
 
 let autoScanInFlight = false;
 
-async function findChatGptTab() {
+async function findChatGptTab(): Promise<chrome.tabs.Tab | null> {
   const [activeTab] = await chrome.tabs.query({
     active: true,
     currentWindow: true,
@@ -400,7 +424,7 @@ async function findChatGptTab() {
   return anyTab || null;
 }
 
-async function getTabLoginState(tabId) {
+async function getTabLoginState(tabId: number): Promise<LoginState> {
   try {
     return await checkTabLogin(chrome, tabId);
   } catch (error) {
@@ -408,7 +432,7 @@ async function getTabLoginState(tabId) {
   }
 }
 
-async function focusTab(tab) {
+async function focusTab(tab: chrome.tabs.Tab | null): Promise<void> {
   if (!tab?.id) return;
 
   try {
@@ -421,7 +445,14 @@ async function focusTab(tab) {
   }
 }
 
-async function scanAndCacheTab(tab, options = {}) {
+async function scanAndCacheTab(
+  tab: { id?: number; windowId?: number },
+  options: { notes?: string } = {}
+): Promise<MemoryPackage> {
+  if (tab.id == null) {
+    throw new Error("No ChatGPT tab to scan.");
+  }
+
   const scanData = await scanTabWithFallback(chrome, tab.id);
 
   if (scanData?.error) {
@@ -440,7 +471,7 @@ async function scanAndCacheTab(tab, options = {}) {
   return packageData;
 }
 
-async function setPendingScan(notes) {
+async function setPendingScan(notes: string): Promise<void> {
   await chrome.storage.session.set({
     [PENDING_SCAN_KEY]: {
       notes: notes || "",
@@ -449,9 +480,9 @@ async function setPendingScan(notes) {
   });
 }
 
-async function loadPendingScan() {
+async function loadPendingScan(): Promise<PendingScan | null> {
   const data = await chrome.storage.session.get(PENDING_SCAN_KEY);
-  const pending = data[PENDING_SCAN_KEY];
+  const pending = data[PENDING_SCAN_KEY] as PendingScan | undefined;
   if (!pending) return null;
 
   if (Date.now() - (pending.createdAt || 0) > PENDING_SCAN_TTL_MS) {
@@ -462,11 +493,11 @@ async function loadPendingScan() {
   return pending;
 }
 
-async function clearPendingScan() {
+async function clearPendingScan(): Promise<void> {
   await chrome.storage.session.remove(PENDING_SCAN_KEY);
 }
 
-async function recordScanResult(result) {
+async function recordScanResult(result: ScanResult): Promise<void> {
   await chrome.storage.session.set({
     [LAST_SCAN_RESULT_KEY]: {
       ...result,
@@ -475,19 +506,19 @@ async function recordScanResult(result) {
   });
 }
 
-async function loadScanResult() {
+async function loadScanResult(): Promise<(ScanResult & { at: string }) | null> {
   const data = await chrome.storage.session.get(LAST_SCAN_RESULT_KEY);
-  return data[LAST_SCAN_RESULT_KEY] || null;
+  return (data[LAST_SCAN_RESULT_KEY] as ScanResult & { at: string }) || null;
 }
 
-async function clearScanResult() {
+async function clearScanResult(): Promise<void> {
   await chrome.storage.session.remove(LAST_SCAN_RESULT_KEY);
 }
 
 // Triggered from the popup. Guarantees the scan runs against ChatGPT: it reuses
 // an open ChatGPT tab, otherwise opens chatgpt.com, and only scans once the
 // signed-in session is confirmed.
-async function handleScanNow(options = {}) {
+async function handleScanNow(options: { notes?: string } = {}) {
   const notes = options.notes || "";
   const existingTab = await findChatGptTab();
 
@@ -524,7 +555,7 @@ async function handleScanNow(options = {}) {
   await setPendingScan(notes);
   const created = await chrome.tabs.create({ url: CHATGPT_HOME_URL, active: true });
 
-  return { ok: true, status: "opening", tabId: created?.id || null };
+  return { ok: true, status: "opening", tabId: created.id || null };
 }
 
 // Powers the popup "Scan Page" button. It feels like a quick page scan (sound +
@@ -538,7 +569,11 @@ async function handleScanAndSync() {
     const created = await chrome.tabs.create({ url: CHATGPT_HOME_URL, active: false });
     await waitForTabComplete(created.id);
     await sleep(1200);
-    tab = await chrome.tabs.get(created.id).catch(() => created);
+    tab = created.id != null ? await chrome.tabs.get(created.id).catch(() => created) : created;
+  }
+
+  if (!tab.id) {
+    throw new Error("Open a ChatGPT tab before scanning.");
   }
 
   const login = await getTabLoginState(tab.id);
@@ -561,7 +596,7 @@ async function handleScanAndSync() {
 
 // Completes a pending scan as soon as a ChatGPT tab finishes loading while the
 // user is signed in (e.g. right after they log in on a freshly opened tab).
-async function maybeAutoScanAfterLogin(tabId, tab) {
+async function maybeAutoScanAfterLogin(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
   if (autoScanInFlight) return;
   if (!isChatGptUrl(tab?.url || "")) return;
 

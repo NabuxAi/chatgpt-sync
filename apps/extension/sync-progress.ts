@@ -1,10 +1,13 @@
-const $ = (selector) => document.querySelector(selector);
+import type { GentleSyncEvent, GentleSyncState } from "./types.ts";
+
+const $ = <T extends HTMLElement = HTMLElement>(selector: string): T =>
+  document.querySelector<T>(selector) as T;
 const params = new URLSearchParams(window.location.search);
 
-let pollTimer = null;
+let pollTimer: number | null = null;
 let startedFromUrl = false;
 
-function formatDate(value) {
+function formatDate(value: string | null | undefined): string {
   if (!value) return "";
 
   try {
@@ -17,7 +20,7 @@ function formatDate(value) {
   }
 }
 
-function formatShortTime(value) {
+function formatShortTime(value: string | null | undefined): string {
   if (!value) return "";
 
   try {
@@ -29,7 +32,7 @@ function formatShortTime(value) {
   }
 }
 
-async function sendMessage(type) {
+async function sendMessage(type: string): Promise<any> {
   const response = await chrome.runtime.sendMessage({ type });
   if (!response?.ok) {
     throw new Error(response?.error || "Request failed.");
@@ -37,7 +40,7 @@ async function sendMessage(type) {
   return response;
 }
 
-async function startSync() {
+async function startSync(): Promise<void> {
   setBusy(true);
   try {
     const response = await sendMessage("CHATGPT_SYNC_START_GENTLE_SYNC");
@@ -49,7 +52,7 @@ async function startSync() {
   }
 }
 
-async function stopSync() {
+async function stopSync(): Promise<void> {
   setBusy(true);
   try {
     await sendMessage("CHATGPT_SYNC_STOP_GENTLE_SYNC");
@@ -61,7 +64,7 @@ async function stopSync() {
   }
 }
 
-async function refreshStatus() {
+async function refreshStatus(): Promise<void> {
   try {
     const response = await sendMessage("CHATGPT_SYNC_GET_GENTLE_SYNC_STATUS");
     renderState(response.state);
@@ -70,13 +73,13 @@ async function refreshStatus() {
   }
 }
 
-function setBusy(isBusy) {
-  $("#startSync").disabled = isBusy;
-  $("#stopSync").disabled = isBusy;
-  $("#refreshStatus").disabled = isBusy;
+function setBusy(isBusy: boolean): void {
+  $<HTMLButtonElement>("#startSync").disabled = isBusy;
+  $<HTMLButtonElement>("#stopSync").disabled = isBusy;
+  $<HTMLButtonElement>("#refreshStatus").disabled = isBusy;
 }
 
-function progressForState(state) {
+function progressForState(state: GentleSyncState | null): number {
   if (!state) return 0;
   if (state.status === "complete") return 100;
 
@@ -88,7 +91,7 @@ function progressForState(state) {
   return Math.min(99, Math.round((done / total) * 100));
 }
 
-function setPill(status = "idle") {
+function setPill(status = "idle"): void {
   const pill = $("#statusPill");
   pill.className = `status-pill ${status}`;
   pill.textContent = status
@@ -97,7 +100,7 @@ function setPill(status = "idle") {
     .join(" ");
 }
 
-function renderState(state) {
+function renderState(state: GentleSyncState | null): void {
   if (!state) {
     setPill("idle");
     $("#jobTitle").textContent = "Ready to start";
@@ -134,7 +137,7 @@ function renderState(state) {
   renderEvents(state.events || []);
 }
 
-function titleForState(state) {
+function titleForState(state: GentleSyncState): string {
   if (state.status === "complete") return "Sync complete";
   if (state.status === "syncing") return "Opening and caching the next page";
   if (state.status === "backing-off") return "Paused to protect the account";
@@ -143,7 +146,7 @@ function titleForState(state) {
   return "Gentle Sync status";
 }
 
-function nextRunText(state) {
+function nextRunText(state: GentleSyncState): string {
   if (state.status === "complete") return `Finished ${formatDate(state.completedAt || state.updatedAt)}.`;
   if (state.nextRunAt) return `Next background step around ${formatDate(state.nextRunAt)}.`;
   if (state.status === "syncing") return "A page is being opened and scanned now.";
@@ -151,7 +154,7 @@ function nextRunText(state) {
   return "Waiting for the next background alarm.";
 }
 
-function renderEvents(events) {
+function renderEvents(events: GentleSyncEvent[]): void {
   if (!events.length) {
     $("#eventLog").innerHTML = `<li><strong>Queued</strong><p>The first activity will appear after the job starts.</p></li>`;
     return;
@@ -172,7 +175,7 @@ function renderEvents(events) {
     .join("");
 }
 
-function renderError(message) {
+function renderError(message: string): void {
   setPill("idle");
   $("#jobTitle").textContent = "Could not update sync";
   $("#currentTarget").textContent = message;
@@ -185,7 +188,7 @@ function renderError(message) {
   `;
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown): string {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

@@ -1,9 +1,21 @@
-import { GENTLE_SYNC_LOAD_SETTLE_MS, GENTLE_SYNC_TARGET_LIMIT } from "./gentle-sync-policy.js";
+import { GENTLE_SYNC_LOAD_SETTLE_MS, GENTLE_SYNC_TARGET_LIMIT } from "./gentle-sync-policy.ts";
+import type { ChatScan, ProjectScan, SyncTarget } from "./types.ts";
 
 export const DEEP_SYNC_WAIT_MS = GENTLE_SYNC_LOAD_SETTLE_MS;
 export const DEEP_SYNC_TARGET_LIMIT = GENTLE_SYNC_TARGET_LIMIT;
 
-function addTarget(targets, seen, target) {
+interface TargetSeed {
+  kind: SyncTarget["kind"];
+  title?: string;
+  url?: string | null;
+  waitMs?: number;
+}
+
+interface PlanOptions {
+  limit?: number;
+}
+
+function addTarget(targets: SyncTarget[], seen: Set<string>, target: TargetSeed): void {
   if (!target?.url || seen.has(target.url)) return;
 
   seen.add(target.url);
@@ -15,10 +27,13 @@ function addTarget(targets, seen, target) {
   });
 }
 
-export function planDeepSyncTargets(scanData = {}, options = {}) {
+export function planDeepSyncTargets(
+  scanData: { projects?: ProjectScan[]; chats?: ChatScan[] } = {},
+  options: PlanOptions = {}
+): SyncTarget[] {
   const limit = options.limit || DEEP_SYNC_TARGET_LIMIT;
-  const targets = [];
-  const seen = new Set();
+  const targets: SyncTarget[] = [];
+  const seen = new Set<string>();
 
   for (const project of scanData.projects || []) {
     addTarget(targets, seen, {
@@ -39,9 +54,13 @@ export function planDeepSyncTargets(scanData = {}, options = {}) {
   return targets.slice(0, limit);
 }
 
-export function planNewChatTargets(scanData = {}, seenUrls = new Set(), options = {}) {
+export function planNewChatTargets(
+  scanData: { chats?: ChatScan[] } = {},
+  seenUrls: Set<string> = new Set(),
+  options: PlanOptions = {}
+): SyncTarget[] {
   const limit = options.limit || DEEP_SYNC_TARGET_LIMIT;
-  const targets = [];
+  const targets: SyncTarget[] = [];
 
   for (const chat of scanData.chats || []) {
     addTarget(targets, seenUrls, {

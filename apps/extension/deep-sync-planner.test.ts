@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEEP_SYNC_WAIT_MS, planDeepSyncTargets, planNewChatTargets } from "./deep-sync-planner.js";
+import { DEEP_SYNC_WAIT_MS, planDeepSyncTargets, planNewChatTargets } from "./deep-sync-planner.ts";
 
 test("planDeepSyncTargets opens visible projects before chats and deduplicates urls", () => {
   const targets = planDeepSyncTargets({

@@ -1,10 +1,12 @@
+export {};
+
 // Cross-browser API alias: Firefox exposes promise-based `browser`, Chrome uses
 // promise-based `chrome` (MV3). Picking `browser` first keeps one code path.
-const ext = globalThis.browser ?? globalThis.chrome;
+const ext: any = (globalThis as any).browser ?? globalThis.chrome;
 
-const $ = (selector) => document.querySelector(selector);
+const $ = (selector: string): HTMLElement => document.querySelector<HTMLElement>(selector)!;
 
-async function openUrl(url) {
+async function openUrl(url: string): Promise<void> {
   try {
     await ext.tabs.create({ url });
   } catch (_error) {
@@ -12,7 +14,7 @@ async function openUrl(url) {
   }
 }
 
-async function closeSelf() {
+async function closeSelf(): Promise<void> {
   try {
     const tab = await ext.tabs.getCurrent();
     if (tab?.id != null) {

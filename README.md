@@ -75,7 +75,8 @@ scripts/               Maintenance and CI helper scripts
 A scheduled GitHub Action (`.github/workflows/daily-health-check.yml`) runs once
 a day. It executes `npm run health-check`, which:
 
-- syntax-checks every JS/MJS file with `node --check`, and
+- type-checks the whole project with `tsc --noEmit`,
+- syntax-checks the source files with `node --check`, and
 - runs the test suite with `node --test`.
 
 If any check fails, the workflow opens a GitHub issue (labelled
@@ -91,29 +92,47 @@ npm run health-check
 
 ## For developers
 
-This is a dependency-light, local-first Manifest V3 extension — there is **no
-build step**, so you can be productive in minutes.
+This is a local-first Manifest V3 extension written in **TypeScript**. The only
+dependencies are dev-time tooling (the TypeScript compiler and type
+definitions) — the shipped extension itself has zero runtime dependencies.
 
 ```bash
-# Run the unit tests (Node 20+, no extra dependencies)
+# Install the dev tooling (TypeScript + type definitions)
+npm install
+
+# Run the unit tests — Node 22.18+ runs the TypeScript directly, no build needed
 npm test
+
+# Type-check the whole project
+npm run typecheck
+
+# Compile the extension into apps/extension/dist/
+npm run build
 ```
+
+> Source files use `.ts` import specifiers (e.g. `import … from "./sync-core.ts"`)
+> so Node can run the tests and helper scripts directly via its built-in type
+> stripping. `npm run build` compiles them to plain ES modules — rewriting those
+> specifiers to `.js` — into `apps/extension/dist/`, a self-contained, loadable
+> extension.
 
 To try it in your browser:
 
-1. Open `chrome://extensions` and enable **Developer mode**.
-2. Click **Load unpacked** and select the `apps/extension` folder.
-3. Open the popup on a `https://chatgpt.com/*` tab.
+1. Run `npm run build`.
+2. Open `chrome://extensions` and enable **Developer mode**.
+3. Click **Load unpacked** and select the `apps/extension/dist` folder.
+4. Open the popup on a `https://chatgpt.com/*` tab.
 
 The runtime has four surfaces that talk over Chrome message passing:
 
 | File | Role |
 | --- | --- |
-| `apps/extension/content.js` | Scans the ChatGPT page (DOM + same-session API). |
-| `apps/extension/background.js` | Service worker: alarms, sync orchestration, message router. |
-| `apps/extension/popup.js` | Toolbar control panel. |
-| `apps/extension/offline.js` | Static offline reader for cached chats. |
-| `apps/extension/sync-core.js` | Pure, unit-tested logic (build package, merge archive, render). |
+| `apps/extension/content.ts` | Scans the ChatGPT page (DOM + same-session API). |
+| `apps/extension/background.ts` | Service worker: alarms, sync orchestration, message router. |
+| `apps/extension/popup.ts` | Toolbar control panel. |
+| `apps/extension/offline.ts` | Static offline reader for cached chats. |
+| `apps/extension/sync-core.ts` | Pure, unit-tested logic (build package, merge archive, render). |
+| `apps/extension/types.ts` | Shared domain types used across the surfaces. |
 
 ## Contributing
 

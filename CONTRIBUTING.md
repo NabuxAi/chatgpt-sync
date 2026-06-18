@@ -2,9 +2,9 @@
 
 First off — **thank you** for taking the time to contribute! 🎉
 
-ChatGPT Sync is a small, dependency-light, local-first browser extension. That
-makes it a friendly project to jump into: there is no build step, no framework
-to learn, and the core logic is plain JavaScript with fast unit tests. This guide
+ChatGPT Sync is a small, local-first browser extension written in TypeScript.
+That makes it a friendly project to jump into: a tiny, dependency-light codebase,
+no framework to learn, fast unit tests, and a single-command build. This guide
 explains how the project is put together and how to get your first change merged.
 
 If anything here is unclear, open an issue — improving this document is itself a
@@ -57,14 +57,16 @@ You do not need to write code to be valuable here:
 
 ## Prerequisites
 
-- **Node.js 20+** — used only to run the unit tests (`node --test`). There is no
-  bundler and no `node_modules` for the extension itself.
+- **Node.js 22.18+** — runs the unit tests and helper scripts directly from
+  TypeScript via Node's built-in type stripping (no compile step for tests).
+- **npm** — installs the dev tooling (the TypeScript compiler and type
+  definitions). The shipped extension still has no runtime dependencies.
 - A **Chromium-based browser** (Chrome, Brave, Edge) to load the extension. The
   manifest is Manifest V3.
 - Git and a GitHub account.
 
-That's it. The extension ships as plain files you load "unpacked" — no compile
-step.
+`npm run build` compiles the TypeScript into `apps/extension/dist/`, which is the
+folder you load "unpacked".
 
 ---
 
@@ -75,8 +77,14 @@ step.
 git clone https://github.com/<your-username>/chatgpt-sync.git
 cd chatgpt-sync
 
-# 2. Run the tests to confirm everything is green
+# 2. Install the dev tooling
+npm install
+
+# 3. Run the tests to confirm everything is green
 npm test
+
+# 4. Build the loadable extension into apps/extension/dist/
+npm run build
 ```
 
 ### Load the extension in your browser
@@ -84,13 +92,13 @@ npm test
 1. Open `chrome://extensions` (or `brave://extensions`, `edge://extensions`).
 2. Turn on **Developer mode** (top-right toggle).
 3. Click **Load unpacked**.
-4. Select the [`apps/extension`](apps/extension) folder.
+4. Select the `apps/extension/dist` folder (run `npm run build` first).
 5. Pin **ChatGPT Sync** to your toolbar and open it on a `https://chatgpt.com/*`
    tab.
 
-When you change a file, return to `chrome://extensions` and click the **reload**
-(↻) icon on the ChatGPT Sync card to pick up your edits. Content-script changes
-also require reloading the ChatGPT tab.
+When you change a file, run `npm run build` again, then return to
+`chrome://extensions` and click the **reload** (↻) icon on the ChatGPT Sync card
+to pick up your edits. Content-script changes also require reloading the ChatGPT tab.
 
 ---
 
@@ -99,34 +107,40 @@ also require reloading the ChatGPT tab.
 ```txt
 chatgpt-sync/
 ├── apps/
-│   └── extension/              # The Manifest V3 Chrome extension (all runtime code)
+│   └── extension/              # The Manifest V3 Chrome extension (all runtime code, TypeScript)
 │       ├── manifest.json       # MV3 manifest: permissions, background SW, content scripts
-│       ├── background.js       # Service worker: alarms, sync orchestration, message router
-│       ├── content.js          # Injected into ChatGPT pages: DOM + same-session API capture
-│       ├── content-script-bridge.js  # Helper to message the content script (with inject fallback)
-│       ├── sync-core.js        # Pure logic: build packages, merge archive, render offline HTML
-│       ├── session-vault.js    # chrome.storage.session wrapper (the "memory bridge" package)
-│       ├── offline-vault.js    # chrome.storage.local wrapper (the offline archive)
-│       ├── deep-sync-planner.js   # Plans the queue of pages for deep / gentle sync
-│       ├── gentle-sync-policy.js  # Rate-limit constants + 429 detection
-│       ├── popup.{html,js,css}      # Toolbar popup UI
-│       ├── offline.{html,js,css}    # Static offline reader (ChatGPT-like layout)
-│       ├── sync-progress.{html,js,css}  # Gentle-sync progress page
-│       ├── quickstart.{html,js,css}     # Onboarding page
+│       ├── background.ts       # Service worker: alarms, sync orchestration, message router
+│       ├── content.ts          # Injected into ChatGPT pages: DOM + same-session API capture
+│       ├── content-script-bridge.ts  # Helper to message the content script (with inject fallback)
+│       ├── sync-core.ts        # Pure logic: build packages, merge archive, render offline HTML
+│       ├── session-vault.ts    # chrome.storage.session wrapper (the "memory bridge" package)
+│       ├── offline-vault.ts    # chrome.storage.local wrapper (the offline archive)
+│       ├── deep-sync-planner.ts   # Plans the queue of pages for deep / gentle sync
+│       ├── gentle-sync-policy.ts  # Rate-limit constants + 429 detection
+│       ├── types.ts            # Shared domain types used across the surfaces
+│       ├── popup.{html,ts,css}      # Toolbar popup UI
+│       ├── offline.{html,ts,css}    # Static offline reader (ChatGPT-like layout)
+│       ├── sync-progress.{html,ts,css}  # Gentle-sync progress page
+│       ├── quickstart.{html,ts,css}     # Onboarding page
 │       ├── icons/              # Extension icons
-│       └── *.test.js           # Unit tests, colocated next to the module they cover
+│       ├── dist/               # Build output (git-ignored) — load this folder unpacked
+│       └── *.test.ts           # Unit tests, colocated next to the module they cover
 ├── docs/                       # Product spec & backup schema
 │   ├── product-spec.md
 │   └── backup-schema.md
 ├── scripts/
-│   └── live-extension-runner.mjs   # Playwright end-to-end smoke test
-├── package.json                # Just the `test` script — no runtime deps
+│   ├── build-extension.ts          # Compiles TS → dist/ + copies static assets
+│   ├── health-check.ts             # Type-check + syntax-check + tests (used by CI)
+│   └── live-extension-runner.ts    # Playwright end-to-end smoke test
+├── tsconfig.json               # Base TypeScript config (type-checks everything)
+├── tsconfig.build.json         # Build config (emits the extension to dist/)
+├── package.json                # Dev tooling + scripts (build, typecheck, test, health-check)
 └── README.md
 ```
 
 **Rule of thumb:** business logic that does not touch `chrome.*` APIs belongs in
-`sync-core.js` (or another pure module) so it can be unit-tested directly. Thin
-`chrome.*` wrappers (`session-vault.js`, `offline-vault.js`) stay small and
+`sync-core.ts` (or another pure module) so it can be unit-tested directly. Thin
+`chrome.*` wrappers (`session-vault.ts`, `offline-vault.ts`) stay small and
 delegate to the pure logic.
 
 ---
@@ -138,7 +152,7 @@ message passing:
 
 ```
 ┌──────────────┐   messages    ┌──────────────────┐   scripting/messages   ┌───────────────┐
-│  popup.js    │ ────────────► │  background.js   │ ─────────────────────► │  content.js   │
+│  popup.ts    │ ────────────► │  background.ts   │ ─────────────────────► │  content.ts   │
 │ (toolbar UI) │ ◄──────────── │ (service worker) │ ◄───────────────────── │ (ChatGPT tab) │
 └──────────────┘               └──────────────────┘                        └───────────────┘
         │                               │
@@ -148,23 +162,23 @@ message passing:
                                         ▲
                                         │ reads cached chats
                                  ┌──────────────┐
-                                 │  offline.js  │  (static offline reader page)
+                                 │  offline.ts  │  (static offline reader page)
                                  └──────────────┘
 ```
 
-- **`content.js`** runs inside the ChatGPT tab. It scans the visible DOM for the
+- **`content.ts`** runs inside the ChatGPT tab. It scans the visible DOM for the
   project title, instructions, chat links, and rendered messages, and — when a
   signed-in session is available — calls ChatGPT's *same-origin* backend
   endpoints to capture the current conversation more completely. It never asks
   for or stores tokens/cookies.
-- **`background.js`** is the brain. It owns the `chrome.alarms` that drive the
+- **`background.ts`** is the brain. It owns the `chrome.alarms` that drive the
   10-minute auto-sync and the gentle background sync, orchestrates deep sync by
   opening queued pages one at a time, and routes all runtime messages.
-- **`popup.js`** is the user-facing control panel: Scan Page, save to session
+- **`popup.ts`** is the user-facing control panel: Scan Page, save to session
   memory, export JSON, start gentle sync, open the offline reader.
-- **`offline.js`** renders cached chats from `chrome.storage.local` so they can
+- **`offline.ts`** renders cached chats from `chrome.storage.local` so they can
   be read with no network access.
-- **`sync-core.js`** is the pure heart: `buildMemoryPackage()`,
+- **`sync-core.ts`** is the pure heart: `buildMemoryPackage()`,
   `mergePackageIntoArchive()`, `summarizeArchive()`, and
   `renderOfflineChatHtml()`. Most logic changes should land here with tests.
 
@@ -176,8 +190,8 @@ message passing:
 | **Auto sync** | `chrome.alarms`, every `AUTO_SYNC_PERIOD_MINUTES` (10) | Re-syncs currently open ChatGPT tabs. |
 | **Gentle / deep sync** | Popup button | Queues discovered project/chat pages and opens **one per step** with a multi-minute delay; backs off ≥30 min on HTTP 429. |
 
-The conservative timing lives in [`gentle-sync-policy.js`](apps/extension/gentle-sync-policy.js)
-and the queue planning in [`deep-sync-planner.js`](apps/extension/deep-sync-planner.js).
+The conservative timing lives in [`gentle-sync-policy.ts`](apps/extension/gentle-sync-policy.ts)
+and the queue planning in [`deep-sync-planner.ts`](apps/extension/deep-sync-planner.ts).
 Please keep these polite — see the rate-limit posture in the
 [product spec](docs/product-spec.md#rate-limit-posture).
 
@@ -209,15 +223,17 @@ Message handlers that respond asynchronously **must `return true`** from the
 
 ## Running tests
 
-The unit tests use Node's built-in test runner — no extra dependencies.
+The unit tests use Node's built-in test runner. Node runs the TypeScript test
+files directly via type stripping, so there is no build step before testing.
 
 ```bash
-npm test            # runs `node --test` across all *.test.js files
+npm test            # runs `node --test` across all *.test.ts files
+npm run typecheck   # type-checks the whole project with `tsc --noEmit`
 ```
 
-Tests are colocated with the modules they cover (e.g. `sync-core.test.js` lives
-next to `sync-core.js`). They `import` the pure modules and assert behaviour with
-`node:assert/strict`. `manifest.test.js` guards the manifest's critical fields.
+Tests are colocated with the modules they cover (e.g. `sync-core.test.ts` lives
+next to `sync-core.ts`). They `import` the pure modules and assert behaviour with
+`node:assert/strict`. `manifest.test.ts` guards the manifest's critical fields.
 
 **Every behaviour change should come with a test.** Because the core logic is
 pure, this is usually quick: import the function, feed it sample scan data, assert
@@ -227,10 +243,10 @@ on the resulting package or archive. Use the existing tests as templates.
 
 ## End-to-end / live runner
 
-[`scripts/live-extension-runner.mjs`](scripts/live-extension-runner.mjs) loads the
-real extension into a Chromium browser via Playwright, serves fake ChatGPT pages,
-and exercises scan → auto-sync → offline-reader end to end, saving screenshots to
-`tmp/live-extension-test/`.
+[`scripts/live-extension-runner.ts`](scripts/live-extension-runner.ts) loads the
+real **built** extension (run `npm run build` first) into a Chromium browser via
+Playwright, serves fake ChatGPT pages, and exercises scan → auto-sync →
+offline-reader end to end, saving screenshots to `tmp/live-extension-test/`.
 
 This is an optional smoke test, not part of `npm test`. It requires Playwright and
 currently points at a hard-coded Brave path:
@@ -249,11 +265,13 @@ a great contribution — see [good first issues](#good-first-issues).
 
 The codebase is intentionally simple. Match the style you see around you:
 
-- **Vanilla ES modules.** Use `import`/`export`; the manifest declares the
-  service worker as `"type": "module"`. No bundler, no TypeScript, no JSX.
-- **No new runtime dependencies** without discussion. Keeping the extension
-  dependency-free is a feature (smaller attack surface, easier review, instant
-  load). Dev-only tooling (like Playwright) is fine.
+- **TypeScript, ES modules.** Use `import`/`export` with `.ts` specifiers (e.g.
+  `import … from "./sync-core.ts"`); the manifest declares the service worker as
+  `"type": "module"`. `tsc` is the only build tool — no bundler, no JSX. Run
+  `npm run typecheck` before sending a change.
+- **No new runtime dependencies** without discussion. Keeping the shipped
+  extension dependency-free is a feature (smaller attack surface, easier review).
+  Dev-only tooling (TypeScript, type definitions, Playwright) is fine.
 - **2-space indentation**, double quotes, semicolons — consistent with existing
   files.
 - **Keep `chrome.*` access in thin wrappers.** Put testable logic in pure modules.
@@ -316,13 +334,13 @@ Looking for a place to start? These come straight from the
 [roadmap](README.md#roadmap) and the notes above:
 
 - ⏱️ **User-configurable sync interval** — currently hard-coded to
-  `AUTO_SYNC_PERIOD_MINUTES = 10` in `sync-core.js`. Add a setting in the popup
+  `AUTO_SYNC_PERIOD_MINUTES = 10` in `sync-core.ts`. Add a setting in the popup
   and persist it.
 - 📁 **File checklist & manual re-upload flow** — guide users through re-uploading
   captured files during restore.
 - 🔒 **Optional encrypted local vault** — encrypt the offline archive at rest.
 - 🖥️ **Make the live runner cross-platform** — auto-detect the browser instead of
-  the hard-coded Brave path in `scripts/live-extension-runner.mjs`.
+  the hard-coded Brave path in `scripts/live-extension-runner.ts`.
 - 🧪 **Add tests** for any module that feels under-covered.
 - 🌍 **Translate the docs** (including this guide) into other languages.
 

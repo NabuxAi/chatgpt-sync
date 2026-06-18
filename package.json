@@ -4,7 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-extension.ts",
+    "typecheck": "tsc --noEmit",
     "test": "node --test",
-    "health-check": "node scripts/health-check.mjs"
+    "health-check": "node scripts/health-check.ts"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.43",
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
   }
 }

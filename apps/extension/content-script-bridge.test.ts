@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.js";
+import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.ts";
+import type { MessagingChromeApi } from "./content-script-bridge.ts";
 
 test("scanTabWithFallback injects content script when an existing ChatGPT tab has no receiver", async () => {
-  const calls = [];
+  const calls: unknown[][] = [];
   let sendAttempts = 0;
 
-  const chromeApi = {
+  const chromeApi: MessagingChromeApi = {
     tabs: {
       async sendMessage(tabId, message) {
         calls.push(["sendMessage", tabId, message.type]);
@@ -37,7 +38,7 @@ test("scanTabWithFallback injects content script when an existing ChatGPT tab ha
 
   const scanData = await scanTabWithFallback(chromeApi, 42);
 
-  assert.equal(scanData.project.title, "Injected Project");
+  assert.equal(scanData.project!.title, "Injected Project");
   assert.deepEqual(calls, [
     ["sendMessage", 42, "CHATGPT_SYNC_SCAN_PAGE"],
     ["executeScript", 42, "content.js"],
@@ -46,7 +47,7 @@ test("scanTabWithFallback injects content script when an existing ChatGPT tab ha
 });
 
 test("scanTabWithFallback shows a friendly error when active tab is not injectable", async () => {
-  const chromeApi = {
+  const chromeApi: MessagingChromeApi = {
     tabs: {
       async sendMessage() {
         throw new Error("No receiver");
@@ -66,9 +67,9 @@ test("scanTabWithFallback shows a friendly error when active tab is not injectab
 });
 
 test("checkTabLogin asks the content script for the ChatGPT login state", async () => {
-  const calls = [];
+  const calls: unknown[][] = [];
 
-  const chromeApi = {
+  const chromeApi: MessagingChromeApi = {
     tabs: {
       async sendMessage(tabId, message) {
         calls.push(["sendMessage", tabId, message.type]);
@@ -90,15 +91,15 @@ test("checkTabLogin asks the content script for the ChatGPT login state", async 
   const login = await checkTabLogin(chromeApi, 11);
 
   assert.equal(login.loggedIn, true);
-  assert.equal(login.account.email, "user@example.com");
+  assert.equal(login.account!.email, "user@example.com");
   assert.deepEqual(calls, [["sendMessage", 11, "CHATGPT_SYNC_CHECK_LOGIN"]]);
 });
 
 test("checkTabLogin injects content.js when the tab has no receiver yet", async () => {
-  const calls = [];
+  const calls: unknown[][] = [];
   let sendAttempts = 0;
 
-  const chromeApi = {
+  const chromeApi: MessagingChromeApi = {
     tabs: {
       async sendMessage(tabId, message) {
         calls.push(["sendMessage", tabId, message.type]);

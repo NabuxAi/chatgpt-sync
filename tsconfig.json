@@ -1,0 +1,29 @@
+{
+  // Base config: type-checks the whole project (extension + scripts + tests).
+  // Source files use `.ts` import specifiers so Node can run them directly via
+  // built-in type stripping (no build needed for tests/scripts). `tsc` rewrites
+  // those specifiers to `.js` when it emits the loadable extension — see
+  // tsconfig.build.json.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["chrome", "node"],
+
+    "strict": true,
+    "useUnknownInCatchVariables": false,
+    "forceConsistentCasingInFileNames": true,
+
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    "noEmit": true
+  },
+  "include": ["apps/extension/**/*.ts", "scripts/**/*.ts"],
+  "exclude": ["node_modules", "apps/extension/dist", "scripts/live-extension-runner.ts"]
+}

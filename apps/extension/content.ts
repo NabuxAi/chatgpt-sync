@@ -1,25 +1,64 @@
+// Content script. Runs inside the ChatGPT tab as a classic (non-module) script,
+// so it must not use import/export — it stays a single self-contained IIFE.
+// It scrapes the visible DOM and, when a signed-in session is available, reads
+// ChatGPT's same-origin backend endpoints. It never reads or stores credentials.
 (() => {
-  function cleanText(value) {
+  interface ChatLink {
+    title: string;
+    url: string;
+  }
+
+  interface ProjectLink {
+    title: string;
+    url: string;
+    current?: boolean;
+  }
+
+  interface VisibleMessage {
+    role: string;
+    text: string;
+    createTime?: number | null;
+  }
+
+  interface VisibleFile {
+    id: string;
+    name: string;
+    mimeType: string | null;
+    width?: number | null;
+    height?: number | null;
+    sizeBytes?: number | null;
+    conversationId?: string;
+    sourceDownloadPath?: string;
+    previewStatus?: string;
+  }
+
+  interface AccountIdentity {
+    key: string;
+    label: string;
+    email?: string;
+  }
+
+  function cleanText(value: unknown): string {
     return String(value || "")
       .replace(/\s+/g, " ")
       .trim();
   }
 
-  function getPageTitle() {
-    const h1 = document.querySelector("h1");
+  function getPageTitle(): string {
+    const h1 = document.querySelector<HTMLElement>("h1");
     const title = cleanText(h1?.innerText || document.title);
 
     if (!title) return "Untitled ChatGPT Project";
     return title.replace(" | ChatGPT", "");
   }
 
-  function detectProjectTitle() {
+  function detectProjectTitle(): string {
     const url = window.location.href;
 
     const candidates = [
-      document.querySelector('[data-testid="project-title"]'),
-      document.querySelector("h1"),
-      document.querySelector("main h1")
+      document.querySelector<HTMLElement>('[data-testid="project-title"]'),
+      document.querySelector<HTMLElement>("h1"),
+      document.querySelector<HTMLElement>("main h1")
     ];
 
     for (const element of candidates) {
@@ -32,10 +71,10 @@
     return "";
   }
 
-  function scanVisibleChats() {
-    const links = Array.from(document.querySelectorAll('a[href*="/c/"]'));
+  function scanVisibleChats(): ChatLink[] {
+    const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/c/"]'));
 
-    const unique = new Map();
+    const unique = new Map<string, ChatLink>();
 
     for (const link of links) {
       const href = link.href;
@@ -52,9 +91,9 @@
     return Array.from(unique.values());
   }
 
-  function scanVisibleProjects() {
+  function scanVisibleProjects(): ProjectLink[] {
     const links = Array.from(
-      document.querySelectorAll(
+      document.querySelectorAll<HTMLAnchorElement>(
         [
           'a[href*="/g/"]',
           'a[href*="/project"]'
@@ -62,8 +101,8 @@
       )
     );
 
-    const unique = new Map();
-    const titleKeys = new Map();
+    const unique = new Map<string, ProjectLink>();
+    const titleKeys = new Map<string, string>();
 
     for (const link of links) {
       const href = link.href;
@@ -74,7 +113,7 @@
       if (!href || !title) continue;
 
       if (unique.has(key)) {
-        const existing = unique.get(key);
+        const existing = unique.get(key)!;
         if (href.includes("/g/") || href.includes("/project")) {
           existing.url = href;
         }
@@ -96,7 +135,7 @@
       const key = titleKeys.get(titleKey) || currentUrl;
 
       if (unique.has(key)) {
-        unique.get(key).current = true;
+        unique.get(key)!.current = true;
       } else {
         titleKeys.set(titleKey, key);
         unique.set(key, {
@@ -110,7 +149,7 @@
     return Array.from(unique.values());
   }
 
-  function detectRoleFromElement(element) {
+  function detectRoleFromElement(element: Element): string {
     const testId = element.getAttribute("data-testid") || "";
     const aria = element.getAttribute("aria-label") || "";
     const text = `${testId} ${aria}`.toLowerCase();
@@ -121,7 +160,7 @@
     return "message";
   }
 
-  function scanVisibleMessages() {
+  function scanVisibleMessages(): VisibleMessage[] {
     const selectors = [
       "[data-message-author-role]",
       '[data-testid*="conversation-turn"]',
@@ -129,10 +168,10 @@
       "main [role='article']"
     ];
 
-    const found = [];
+    const found: VisibleMessage[] = [];
 
     for (const selector of selectors) {
-      const elements = Array.from(document.querySelectorAll(selector));
+      const elements = Array.from(document.querySelectorAll<HTMLElement>(selector));
 
       for (const element of elements) {
         const text = cleanText(element.innerText || element.textContent);
@@ -152,7 +191,7 @@
       if (found.length) break;
     }
 
-    const seen = new Set();
+    const seen = new Set<string>();
 
     return found.filter((item) => {
       const key = `${item.role}:${item.text.slice(0, 80)}`;
@@ -162,14 +201,14 @@
     });
   }
 
-  function scanProjectInstructions() {
+  function scanProjectInstructions(): string {
     const possibleLabels = [
       "project instructions",
       "instructions",
       "custom instructions"
     ];
 
-    const textareas = Array.from(document.querySelectorAll("textarea"));
+    const textareas = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea"));
 
     for (const textarea of textareas) {
       const labelText = cleanText(
@@ -186,8 +225,8 @@
     return "";
   }
 
-  function scanVisibleFiles() {
-    return Array.from(document.querySelectorAll("main img"))
+  function scanVisibleFiles(): VisibleFile[] {
+    return Array.from(document.querySelectorAll<HTMLImageElement>("main img"))
       .map((image, index) => {
         const name =
           cleanText(image.getAttribute("alt")) ||
@@ -204,14 +243,14 @@
       });
   }
 
-  function extractEmail(value) {
+  function extractEmail(value: unknown): string {
     const match = String(value || "").match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
     return match ? match[0] : "";
   }
 
   // Labels like "Open project options for X", "Delete chat", "New project" are
   // controls, not the account. These are what the old selector accidentally grabbed.
-  function looksLikeActionLabel(label) {
+  function looksLikeActionLabel(label: unknown): boolean {
     const text = String(label || "").toLowerCase();
     const actionWords = [
       "option",
@@ -244,7 +283,7 @@
   // DOM-based account detection. This is only a fallback now -- scanPage prefers
   // the authenticated session API (see resolveAccount). It still avoids grabbing
   // sidebar action buttons and prefers anything that looks like an email.
-  function detectAccount() {
+  function detectAccount(): AccountIdentity {
     const ignored = new Set([
       "new chat",
       "search chats",
@@ -263,7 +302,7 @@
     ];
 
     for (const selector of selectors) {
-      for (const element of Array.from(document.querySelectorAll(selector))) {
+      for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
         const label = cleanText(element.innerText || element.getAttribute("aria-label"));
 
         const email = extractEmail(label);
@@ -288,18 +327,18 @@
     };
   }
 
-  function extractConversationId(url = window.location.href) {
+  function extractConversationId(url: string = window.location.href): string {
     const match = String(url).match(/\/c\/([a-zA-Z0-9-]+)/);
     return match?.[1] || "";
   }
 
-  function extractTextFromContent(content = {}) {
+  function extractTextFromContent(content: any = {}): string {
     if (!content || typeof content !== "object") return "";
 
     if (Array.isArray(content.parts)) {
       return cleanText(
         content.parts
-          .map((part) => {
+          .map((part: any) => {
             if (typeof part === "string") return part;
             if (part?.text) return part.text;
             if (part?.content_type === "text" && part?.text) return part.text;
@@ -315,12 +354,12 @@
     return "";
   }
 
-  function extractFileIdFromPointer(pointer = "") {
+  function extractFileIdFromPointer(pointer: unknown = ""): string {
     const match = String(pointer).match(/file_[a-zA-Z0-9_]+/);
     return match?.[0] || "";
   }
 
-  function createDownloadPath(fileId, conversationId) {
+  function createDownloadPath(fileId: string, conversationId: string): string {
     const params = new URLSearchParams({
       conversation_id: conversationId,
       inline: "false"
@@ -329,11 +368,11 @@
     return `/backend-api/files/download/${fileId}?${params.toString()}`;
   }
 
-  function collectMessageFiles(message, conversationId) {
-    const files = [];
-    const seen = new Set();
+  function collectMessageFiles(message: any, conversationId: string): VisibleFile[] {
+    const files: VisibleFile[] = [];
+    const seen = new Set<string>();
 
-    function addFile(file = {}) {
+    function addFile(file: any = {}): void {
       const fileId =
         file.id ||
         file.file_id ||
@@ -373,11 +412,11 @@
     return files;
   }
 
-  function normalizeBackendConversation(data, pageUrl) {
+  function normalizeBackendConversation(data: any, pageUrl: string) {
     const conversationId = data?.conversation_id || extractConversationId(pageUrl);
-    const nodes = Object.values(data?.mapping || {});
-    const messages = [];
-    const filesById = new Map();
+    const nodes: any[] = Object.values(data?.mapping || {});
+    const messages: VisibleMessage[] = [];
+    const filesById = new Map<string, VisibleFile>();
     const skippedContentTypes = new Set([
       "model_editable_context",
       "thoughts",
@@ -406,7 +445,7 @@
         role,
         text,
         createTime: message.create_time || null
-      });
+      } as VisibleMessage);
     }
 
     messages.sort((a, b) => (a.createTime || 0) - (b.createTime || 0));
@@ -444,7 +483,7 @@
     return normalizeBackendConversation(await response.json(), window.location.href);
   }
 
-  function hasLoggedInDomMarkers() {
+  function hasLoggedInDomMarkers(): boolean {
     return Boolean(
       document.querySelector('[data-testid="profile-button"]') ||
       document.querySelector('[data-testid="accounts-menu-button"]') ||
@@ -452,7 +491,7 @@
     );
   }
 
-  function hasLoggedOutDomMarkers() {
+  function hasLoggedOutDomMarkers(): boolean {
     if (/\/auth\/(login|signup)/.test(window.location.pathname)) return true;
 
     const loginWords = new Set([
@@ -464,7 +503,7 @@
     ]);
 
     const candidates = Array.from(
-      document.querySelectorAll('a[href*="/auth/"], button, a[role="button"]')
+      document.querySelectorAll<HTMLElement>('a[href*="/auth/"], button, a[role="button"]')
     );
 
     for (const element of candidates) {
@@ -475,7 +514,7 @@
     return false;
   }
 
-  async function fetchSessionUser() {
+  async function fetchSessionUser(): Promise<{ reachable: boolean; user?: any; detail?: string }> {
     try {
       const response = await fetch("/api/auth/session", {
         credentials: "include",
@@ -499,7 +538,7 @@
 
   // Builds the canonical account identity from the signed-in session payload.
   // email is the stable grouping key so the offline reader groups by real account.
-  function accountFromSessionUser(user) {
+  function accountFromSessionUser(user: any): AccountIdentity | null {
     const email = cleanText(user?.email);
     const name = cleanText(user?.name);
 
@@ -514,7 +553,7 @@
 
   // Prefer the authenticated session for account identity; only fall back to the
   // DOM when the session API is unavailable.
-  async function resolveAccount() {
+  async function resolveAccount(): Promise<AccountIdentity> {
     try {
       const session = await fetchSessionUser();
       if (session.reachable) {

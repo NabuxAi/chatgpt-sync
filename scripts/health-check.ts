@@ -3,8 +3,9 @@
 //
 // Runs a set of lightweight checks against the repository and produces a
 // machine- and human-readable report:
-//   1. Syntax check (`node --check`) on every tracked JS/MJS file.
-//   2. Test suite (`node --test`).
+//   1. Type check (`tsc --noEmit`) across the whole project.
+//   2. Syntax check (`node --check`) on every tracked JS/TS file.
+//   3. Test suite (`node --test`).
 //
 // Behaviour:
 //   - Prints a Markdown report to stdout.
@@ -12,36 +13,52 @@
 //     (default: health-report.md) so CI can attach it to an issue.
 //   - Exits 0 when everything passes, 1 when any check fails.
 //
-// It has no third-party dependencies so it can run anywhere Node is available.
+// It runs directly with Node's built-in TypeScript support (no compile step).
 
 import { spawnSync } from "node:child_process";
-import { readdirSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const require = createRequire(import.meta.url);
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const IGNORED_DIRS = new Set([".git", "node_modules", "tmp", "dist", "build"]);
-const JS_EXTENSIONS = [".js", ".mjs", ".cjs"];
+const SOURCE_EXTENSIONS = [".ts", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 
-function collectJsFiles(dir) {
-  const found = [];
+interface RunResult {
+  ok: boolean;
+  status: number | null;
+  output: string;
+  error?: Error;
+}
+
+interface Check {
+  name: string;
+  ok: boolean;
+  summary: string;
+  details: string;
+}
+
+function collectSourceFiles(dir: string): string[] {
+  const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name)) continue;
-      found.push(...collectJsFiles(join(dir, entry.name)));
-    } else if (JS_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+      found.push(...collectSourceFiles(join(dir, entry.name)));
+    } else if (SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
       found.push(join(dir, entry.name));
     }
   }
   return found;
 }
 
-function run(command, args, options = {}) {
+function run(command: string, args: string[], options: Record<string, unknown> = {}): RunResult {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
-    ...options,
+    ...options
   });
   const stdout = result.stdout ?? "";
   const stderr = result.stderr ?? "";
@@ -49,14 +66,50 @@ function run(command, args, options = {}) {
     ok: result.status === 0 && !result.error,
     status: result.status,
     output: [stdout, stderr].filter(Boolean).join("\n").trim(),
-    error: result.error,
+    error: result.error
   };
 }
 
-// --- Check 1: syntax check every JS file ---------------------------------
-function syntaxCheck() {
-  const files = collectJsFiles(repoRoot).sort();
-  const failures = [];
+// --- Check 1: type-check the whole project --------------------------------
+function typeCheck(): Check {
+  let tscPath: string;
+  try {
+    tscPath = require.resolve("typescript/bin/tsc");
+  } catch {
+    return {
+      name: "Type check (tsc --noEmit)",
+      ok: false,
+      summary: "TypeScript is not installed. Run `npm ci` (or `npm install`) first.",
+      details: ""
+    };
+  }
+
+  const result = run(process.execPath, [tscPath, "--noEmit", "-p", join(repoRoot, "tsconfig.json")]);
+  return {
+    name: "Type check (tsc --noEmit)",
+    ok: result.ok,
+    summary: result.ok ? "No type errors." : "Type errors detected.",
+    details: result.ok ? "" : "```\n" + tail(result.output, 200) + "\n```"
+  };
+}
+
+// `node --check` only type-strips files it detects as ES modules. A global
+// (import/export-free) `.ts` script such as the content script is parsed as
+// CommonJS and would choke on type syntax — but `tsc --noEmit` already validates
+// every `.ts` file, so we let it own those and limit `node --check` to JS files
+// and ES-module `.ts` (which still covers scripts tsc excludes, like the live runner).
+function shouldNodeCheck(file: string): boolean {
+  if (/\.(mjs|cjs|js)$/.test(file)) return true;
+  if (/\.(ts|mts|cts)$/.test(file)) {
+    return /^\s*(import|export)\b/m.test(readFileSync(file, "utf8"));
+  }
+  return false;
+}
+
+// --- Check 2: syntax check every source file ------------------------------
+function syntaxCheck(): Check {
+  const files = collectSourceFiles(repoRoot).sort().filter(shouldNodeCheck);
+  const failures: string[] = [];
   for (const file of files) {
     const rel = relative(repoRoot, file);
     const result = run(process.execPath, ["--check", file]);
@@ -69,33 +122,33 @@ function syntaxCheck() {
     ok: failures.length === 0,
     summary:
       failures.length === 0
-        ? `All ${files.length} JS file(s) parse cleanly.`
+        ? `All ${files.length} source file(s) parse cleanly.`
         : `${failures.length} of ${files.length} file(s) failed to parse.`,
-    details: failures.join("\n\n"),
+    details: failures.join("\n\n")
   };
 }
 
-// --- Check 2: test suite -------------------------------------------------
-function testSuite() {
+// --- Check 3: test suite --------------------------------------------------
+function testSuite(): Check {
   const result = run(process.execPath, ["--test"]);
   return {
     name: "Test suite (node --test)",
     ok: result.ok,
     summary: result.ok ? "All tests passed." : "Test suite reported failures.",
-    details: result.ok ? "" : "```\n" + tail(result.output, 200) + "\n```",
+    details: result.ok ? "" : "```\n" + tail(result.output, 200) + "\n```"
   };
 }
 
-function tail(text, maxLines) {
+function tail(text: string, maxLines: number): string {
   const lines = text.split("\n");
   if (lines.length <= maxLines) return text;
   return ["…(truncated)…", ...lines.slice(-maxLines)].join("\n");
 }
 
-function buildReport(checks) {
+function buildReport(checks: Check[]): string {
   const failed = checks.filter((c) => !c.ok);
   const timestamp = new Date().toISOString();
-  const lines = [];
+  const lines: string[] = [];
   lines.push(`# Project health report`);
   lines.push("");
   lines.push(`- Generated: ${timestamp}`);
@@ -127,8 +180,8 @@ function buildReport(checks) {
   return lines.join("\n");
 }
 
-function main() {
-  const checks = [syntaxCheck(), testSuite()];
+function main(): void {
+  const checks = [typeCheck(), syntaxCheck(), testSuite()];
   const report = buildReport(checks);
   const ok = checks.every((c) => c.ok);
 
@@ -136,7 +189,7 @@ function main() {
   try {
     writeFileSync(reportFile, report);
   } catch (err) {
-    console.error(`Could not write report file: ${err.message}`);
+    console.error(`Could not write report file: ${(err as Error).message}`);
   }
 
   process.stdout.write(report + "\n");
@@ -145,7 +198,7 @@ function main() {
   if (process.env.GITHUB_OUTPUT) {
     try {
       writeFileSync(process.env.GITHUB_OUTPUT, `status=${ok ? "healthy" : "failing"}\n`, {
-        flag: "a",
+        flag: "a"
       });
     } catch {
       // best effort only

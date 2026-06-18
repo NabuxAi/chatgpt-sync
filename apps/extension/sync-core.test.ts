@@ -7,7 +7,7 @@ import {
   createEmptyOfflineArchive,
   mergePackageIntoArchive,
   renderOfflineChatHtml
-} from "./sync-core.js";
+} from "./sync-core.ts";
 
 test("buildMemoryPackage creates a restorable package from visible scan data", () => {
   const packageData = buildMemoryPackage(
@@ -301,8 +301,8 @@ test("mergePackageIntoArchive attaches current chat messages to the current visi
   });
   const currentProject = archive.projects.find((project) => project.title === "Current Project");
 
-  assert.equal(archive.chats[0].projectKey, currentProject.key);
-  assert.equal(archive.messages[0].projectKey, currentProject.key);
+  assert.equal(archive.chats[0].projectKey, currentProject?.key);
+  assert.equal(archive.messages[0].projectKey, currentProject?.key);
   assert.match(renderOfflineChatHtml(archive), /Visible answer/);
 });
 
