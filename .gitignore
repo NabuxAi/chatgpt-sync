@@ -3,3 +3,4 @@ dist/
 apps/extension/dist/
 tmp/
 health-report.md
+.auto-pr-number
