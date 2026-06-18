@@ -6,7 +6,7 @@ import {
   GENTLE_SYNC_STEP_DELAY_MINUTES,
   isRateLimitSignal,
   packageHitRateLimit
-} from "./gentle-sync-policy.js";
+} from "./gentle-sync-policy.ts";
 
 test("gentle sync policy spaces background steps conservatively", () => {
   assert.ok(GENTLE_SYNC_STEP_DELAY_MINUTES >= 2);

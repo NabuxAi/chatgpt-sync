@@ -1,14 +1,21 @@
-import { loadOfflineArchive, clearOfflineArchive } from "./offline-vault.js";
-import { summarizeArchive } from "./sync-core.js";
+import { loadOfflineArchive, clearOfflineArchive } from "./offline-vault.ts";
+import { summarizeArchive } from "./sync-core.ts";
+import type { ChatRecord, FileRecord, OfflineArchive, ProjectRecord } from "./types.ts";
 
-const $ = (selector) => document.querySelector(selector);
+const $ = <T extends HTMLElement = HTMLElement>(selector: string): T =>
+  document.querySelector<T>(selector) as T;
 
-let archive = null;
+interface ProjectGroup {
+  project: Partial<ProjectRecord> & { key: string };
+  chats: ChatRecord[];
+}
+
+let archive: OfflineArchive | null = null;
 let selectedAccountKey = "";
 let selectedChatKey = "";
 let expandedProjectKey = "";
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown): string {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -17,7 +24,7 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-function formatDate(value) {
+function formatDate(value: string | null | undefined): string {
   if (!value) return "";
 
   try {
@@ -30,12 +37,14 @@ function formatDate(value) {
   }
 }
 
-function accountFallbackKey(item = {}) {
+function accountFallbackKey(item: { accountKey?: string }): string {
   return item.accountKey || "default";
 }
 
-function getAccounts(nextArchive) {
-  const accounts = new Map();
+function getAccounts(
+  nextArchive: Partial<OfflineArchive> | null | undefined
+): Array<{ key: string; label: string }> {
+  const accounts = new Map<string, { key: string; label: string }>();
 
   for (const account of nextArchive?.accounts || []) {
     if (!account?.key) continue;
@@ -70,30 +79,30 @@ function getAccounts(nextArchive) {
   return Array.from(accounts.values());
 }
 
-function chatKey(chat = {}) {
+function chatKey(chat: Partial<ChatRecord> = {}): string {
   return chat.key || `${accountFallbackKey(chat)}:${chat.url || chat.title || "current"}`;
 }
 
-function projectTitle(projectKey) {
+function projectTitle(projectKey: string | undefined): string {
   return (
     (archive?.projects || []).find((project) => project.key === projectKey)?.title ||
     "ChatGPT"
   );
 }
 
-function accountProjects() {
+function accountProjects(): ProjectRecord[] {
   return accountItems(archive?.projects || []);
 }
 
-function accountItems(items = []) {
+function accountItems<T extends { accountKey?: string }>(items: T[]): T[] {
   return items.filter((item) => accountFallbackKey(item) === selectedAccountKey);
 }
 
-function getVisibleProjectsWithChats() {
-  const query = $("#chatSearch").value.trim().toLowerCase();
+function getVisibleProjectsWithChats(): ProjectGroup[] {
+  const query = $<HTMLInputElement>("#chatSearch").value.trim().toLowerCase();
   const chats = accountItems(archive?.chats || []);
   const projects = accountProjects();
-  const groups = new Map();
+  const groups = new Map<string, ProjectGroup>();
 
   for (const project of projects) {
     groups.set(project.key, {
@@ -113,7 +122,7 @@ function getVisibleProjectsWithChats() {
         chats: []
       });
     }
-    groups.get(key).chats.push(chat);
+    groups.get(key)!.chats.push(chat);
   }
 
   const allGroups = Array.from(groups.values());
@@ -137,15 +146,15 @@ function getVisibleProjectsWithChats() {
     });
 }
 
-function flattenGroups(groups) {
+function flattenGroups(groups: ProjectGroup[]): ChatRecord[] {
   return groups.flatMap((group) => group.chats);
 }
 
-function selectedChatFromGroups(groups) {
+function selectedChatFromGroups(groups: ProjectGroup[]): ChatRecord | undefined {
   return flattenGroups(groups).find((chat) => chatKey(chat) === selectedChatKey);
 }
 
-function ensureExpandedProject(groups, selectedChat) {
+function ensureExpandedProject(groups: ProjectGroup[], selectedChat: ChatRecord | undefined): void {
   if (groups.some((group) => group.project.key === expandedProjectKey)) {
     return;
   }
@@ -153,11 +162,11 @@ function ensureExpandedProject(groups, selectedChat) {
   expandedProjectKey = selectedChat?.projectKey || groups[0]?.project.key || "";
 }
 
-function projectChatCountLabel(count) {
+function projectChatCountLabel(count: number): string {
   return `${count} chat${count === 1 ? "" : "s"}`;
 }
 
-function renderProjectGroup(group) {
+function renderProjectGroup(group: ProjectGroup): string {
   const isExpanded = group.project.key === expandedProjectKey;
   const chatsHtml = isExpanded
     ? `<div class="chat-nest">
@@ -193,45 +202,41 @@ function renderProjectGroup(group) {
   `;
 }
 
-function wireProjectList(list, groups) {
-  for (const row of list.querySelectorAll(".project-row")) {
+function wireProjectList(list: HTMLElement, groups: ProjectGroup[]): void {
+  for (const row of list.querySelectorAll<HTMLElement>(".project-row")) {
     row.addEventListener("click", () => {
       expandedProjectKey =
-        expandedProjectKey === row.dataset.projectKey ? "" : row.dataset.projectKey;
+        expandedProjectKey === row.dataset.projectKey ? "" : (row.dataset.projectKey ?? "");
       renderChatList();
     });
   }
 
-  for (const row of list.querySelectorAll(".chat-row")) {
+  for (const row of list.querySelectorAll<HTMLElement>(".chat-row")) {
     row.addEventListener("click", () => {
-      selectedChatKey = row.dataset.chatKey;
+      selectedChatKey = row.dataset.chatKey ?? "";
       const chat = selectedChatFromGroups(groups);
       if (chat?.projectKey) expandedProjectKey = chat.projectKey;
       renderChatList();
-      renderConversation(chat);
+      renderConversation(chat ?? null);
     });
   }
 }
 
-function getVisibleChats() {
-  return flattenGroups(getVisibleProjectsWithChats());
-}
-
-function getMessagesForChat(chat) {
+function getMessagesForChat(chat: ChatRecord) {
   const key = chatKey(chat);
   return accountItems(archive?.messages || []).filter(
     (message) => message.chatKey === key || message.chatUrl === chat.url
   );
 }
 
-function getFilesForChat(chat) {
+function getFilesForChat(chat: ChatRecord): FileRecord[] {
   const key = chatKey(chat);
   return accountItems(archive?.files || []).filter(
     (file) => file.chatKey === key || file.chatUrl === chat.url
   );
 }
 
-function sourceFileUrl(file = {}) {
+function sourceFileUrl(file: Partial<FileRecord> = {}): string {
   if (file.dataUrl) return "";
   if (file.sourceDownloadPath?.startsWith("http")) return file.sourceDownloadPath;
   if (file.sourceDownloadPath?.startsWith("/")) {
@@ -240,13 +245,13 @@ function sourceFileUrl(file = {}) {
   return "";
 }
 
-function renderAccounts() {
+function renderAccounts(): void {
   const accounts = getAccounts(archive);
   if (!accounts.some((account) => account.key === selectedAccountKey)) {
     selectedAccountKey = accounts[0]?.key || "default";
   }
 
-  $("#accountSelect").innerHTML = accounts
+  $<HTMLSelectElement>("#accountSelect").innerHTML = accounts
     .map(
       (account) =>
         `<option value="${escapeHtml(account.key)}"${account.key === selectedAccountKey ? " selected" : ""}>${escapeHtml(account.label)}</option>`
@@ -254,9 +259,9 @@ function renderAccounts() {
     .join("");
 }
 
-function renderSummary() {
+function renderSummary(): void {
   const summary = summarizeArchive({
-    ...archive,
+    ...(archive || {}),
     projects: accountItems(archive?.projects || []),
     chats: accountItems(archive?.chats || []),
     messages: accountItems(archive?.messages || [])
@@ -270,7 +275,7 @@ function renderSummary() {
     : "Not synced yet.";
 }
 
-function renderChatList() {
+function renderChatList(): void {
   const groups = getVisibleProjectsWithChats();
   const chats = flattenGroups(groups);
   const list = $("#chatList");
@@ -296,7 +301,7 @@ function renderChatList() {
   renderConversation(selectedChatFromGroups(groups) || null);
 }
 
-function renderFiles(chat) {
+function renderFiles(chat: ChatRecord | null): void {
   const files = chat ? getFilesForChat(chat) : [];
   const strip = $("#fileStrip");
 
@@ -332,7 +337,7 @@ function renderFiles(chat) {
     .join("");
 }
 
-function renderMessages(chat) {
+function renderMessages(chat: ChatRecord | null): void {
   const messages = chat ? getMessagesForChat(chat) : [];
 
   if (!chat) {
@@ -366,7 +371,7 @@ function renderMessages(chat) {
   `;
 }
 
-function renderInlineFiles(chat) {
+function renderInlineFiles(chat: ChatRecord): string {
   const files = getFilesForChat(chat);
   if (!files.length) return "";
 
@@ -380,7 +385,7 @@ function renderInlineFiles(chat) {
   `;
 }
 
-function renderInlineFile(file) {
+function renderInlineFile(file: FileRecord): string {
   const isImage = String(file.mimeType || "").startsWith("image/");
   const preview = file.dataUrl && isImage
     ? `<span class="image-fallback-label">Image preview unavailable offline</span><img src="${escapeHtml(file.dataUrl)}" alt="${escapeHtml(file.name || "Cached image")}" />`
@@ -402,13 +407,13 @@ function renderInlineFile(file) {
   `;
 }
 
-function renderConversation(chat) {
+function renderConversation(chat: ChatRecord | null): void {
   $("#conversationTitle").textContent = chat?.title || "Cached ChatGPT conversation";
   $("#conversationMeta").textContent = chat
     ? `${projectTitle(chat.projectKey)} · ${formatDate(chat.updatedAt)}`
     : "Select a chat";
 
-  const sourceLink = $("#sourceLink");
+  const sourceLink = $<HTMLAnchorElement>("#sourceLink");
   sourceLink.classList.toggle("visible", Boolean(chat?.url));
   sourceLink.href = chat?.url || "#";
 
@@ -416,7 +421,7 @@ function renderConversation(chat) {
   renderMessages(chat);
 }
 
-async function renderOfflineArchive() {
+async function renderOfflineArchive(): Promise<void> {
   archive = await loadOfflineArchive();
 
   renderAccounts();
@@ -442,7 +447,7 @@ $("#clearArchive").addEventListener("click", async () => {
 });
 
 $("#accountSelect").addEventListener("change", (event) => {
-  selectedAccountKey = event.target.value;
+  selectedAccountKey = (event.target as HTMLSelectElement).value;
   selectedChatKey = "";
   expandedProjectKey = "";
   renderSummary();

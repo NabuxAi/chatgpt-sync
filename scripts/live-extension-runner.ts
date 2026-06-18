@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 
@@ -6,11 +7,18 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
 const root = resolve(import.meta.dirname, "..");
-const extensionPath = resolve(root, "apps/extension");
+// The browser loads the *built* extension. Run `npm run build` first.
+const extensionPath = resolve(root, "apps/extension/dist");
 const artifactDir = resolve(root, "tmp/live-extension-test");
 const userDataDir = resolve(artifactDir, "profile");
 
-function pageHtml(title, body) {
+if (!existsSync(resolve(extensionPath, "manifest.json"))) {
+  throw new Error(
+    `Built extension not found at ${extensionPath}. Run \`npm run build\` before the live runner.`
+  );
+}
+
+function pageHtml(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -93,9 +101,9 @@ const context = await chromium.launchPersistentContext(userDataDir, {
 });
 
 try {
-  await context.route("https://chatgpt.com/**", async (route) => {
+  await context.route("https://chatgpt.com/**", async (route: any) => {
     const url = new URL(route.request().url());
-    const bodyByPath = {
+    const bodyByPath: Record<string, string> = {
       "/c/live-test": fakeChatHtml,
       "/g/live-test-project": fakeProjectHtml,
       "/g/second-project": fakeSecondProjectHtml,

@@ -37,7 +37,7 @@ jobs:
       - name: Run project health check
         id: health
         continue-on-error: true
-        run: node scripts/health-check.mjs
+        run: node scripts/health-check.ts
 
       - name: File or resolve health-check issue
         uses: actions/github-script@v7

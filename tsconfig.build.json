@@ -1,0 +1,17 @@
+{
+  // Build config: compiles the extension sources to plain ES modules under
+  // apps/extension/dist/. `rewriteRelativeImportExtensions` turns the `./foo.ts`
+  // import specifiers in the source into `./foo.js` in the emitted output, so the
+  // result is a valid Manifest V3 extension you can "Load unpacked".
+  // Test files are excluded — they never ship in the extension.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "apps/extension/dist",
+    "rootDir": "apps/extension",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["apps/extension/**/*.ts"],
+  "exclude": ["node_modules", "apps/extension/dist", "apps/extension/**/*.test.ts"]
+}

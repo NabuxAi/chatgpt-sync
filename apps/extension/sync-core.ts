@@ -1,6 +1,22 @@
+import type {
+  Account,
+  AccountRecord,
+  ArchiveSummary,
+  BuildOptions,
+  ChatRecord,
+  FileRecord,
+  MemoryPackage,
+  MessageRecord,
+  OfflineArchive,
+  ProjectRecord,
+  ProjectScan,
+  RestoreStep,
+  ScanData
+} from "./types.ts";
+
 export const AUTO_SYNC_PERIOD_MINUTES = 10;
 
-const RESTORE_STEPS = [
+const RESTORE_STEPS: RestoreStep[] = [
   {
     id: "create-project",
     label: "Create a new ChatGPT Project in the destination account",
@@ -23,21 +39,21 @@ const RESTORE_STEPS = [
   }
 ];
 
-function cleanText(value) {
+function cleanText(value: unknown): string {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function fallbackNow() {
+function fallbackNow(): string {
   return new Date().toISOString();
 }
 
-function cloneRestoreSteps() {
+function cloneRestoreSteps(): RestoreStep[] {
   return RESTORE_STEPS.map((step) => ({ ...step }));
 }
 
-export function buildMemoryPackage(scanData = {}, options = {}) {
+export function buildMemoryPackage(scanData: ScanData = {}, options: BuildOptions = {}): MemoryPackage {
   const now = options.now || fallbackNow();
   const project = scanData.project || {};
   const projectTitle = cleanText(project.title) || "Untitled ChatGPT Project";
@@ -84,9 +100,9 @@ export function buildMemoryPackage(scanData = {}, options = {}) {
   };
 }
 
-function dedupeProjects(projects) {
-  const unique = new Map();
-  const titleKeys = new Map();
+function dedupeProjects(projects: ProjectScan[]): ProjectScan[] {
+  const unique = new Map<string, ProjectScan>();
+  const titleKeys = new Map<string, string>();
 
   for (const project of projects) {
     const title = cleanText(project.title);
@@ -97,7 +113,7 @@ function dedupeProjects(projects) {
     if (!title) continue;
 
     if (unique.has(key)) {
-      const existing = unique.get(key);
+      const existing = unique.get(key)!;
       if (url?.includes("/g/") || url?.includes("/project")) {
         existing.url = url;
       }
@@ -117,14 +133,14 @@ function dedupeProjects(projects) {
     });
 
     if (url?.includes("/g/") || url?.includes("/project")) {
-      unique.get(key).url = url;
+      unique.get(key)!.url = url;
     }
   }
 
   return Array.from(unique.values());
 }
 
-export function createEmptyOfflineArchive(now = null) {
+export function createEmptyOfflineArchive(now: string | null = null): OfflineArchive {
   return {
     schemaVersion: "0.2",
     app: "chatgpt-sync",
@@ -139,7 +155,7 @@ export function createEmptyOfflineArchive(now = null) {
   };
 }
 
-function upsertByKey(items, nextItem, key) {
+function upsertByKey<T extends Record<string, any>>(items: T[], nextItem: T, key: keyof T): T[] {
   const index = items.findIndex((item) => item[key] === nextItem[key]);
   if (index === -1) {
     return [...items, nextItem];
@@ -153,15 +169,22 @@ function upsertByKey(items, nextItem, key) {
   return updated;
 }
 
-function messageKey(message) {
+interface MessageKeyParts {
+  chatKey?: string;
+  chatUrl?: string | null;
+  role?: string;
+  text?: string;
+}
+
+function messageKey(message: MessageKeyParts): string {
   return `${message.chatKey || message.chatUrl || ""}:${message.role || "message"}:${cleanText(message.text).slice(0, 160)}`;
 }
 
-function fileKey(file) {
+function fileKey(file: FileRecord | { id?: string; sourceDownloadPath?: string; name?: string }): string {
   return file.id || file.sourceDownloadPath || file.name || "";
 }
 
-function normalizeAccount(account = {}, sourceUrl = "") {
+function normalizeAccount(account: Partial<Account> = {}, sourceUrl: string | null = ""): Account {
   const label = cleanText(account.label || account.name) || "ChatGPT account";
   const host = (() => {
     try {
@@ -178,14 +201,18 @@ function normalizeAccount(account = {}, sourceUrl = "") {
   };
 }
 
-export function mergePackageIntoArchive(existingArchive, packageData, options = {}) {
+export function mergePackageIntoArchive(
+  existingArchive: OfflineArchive | null | undefined,
+  packageData: MemoryPackage,
+  options: BuildOptions = {}
+): OfflineArchive {
   const now = options.now || fallbackNow();
   const archive = existingArchive || createEmptyOfflineArchive(now);
   const sourceUrl = packageData?.source?.url || null;
   const account = normalizeAccount(packageData?.source?.account, sourceUrl);
   const accountKey = account.key;
   const projectTitle = packageData?.project?.title || "Untitled ChatGPT Project";
-  const packageProjects =
+  const packageProjects: ProjectScan[] =
     Array.isArray(packageData?.projects) && packageData.projects.length
       ? packageData.projects
       : [
@@ -193,9 +220,9 @@ export function mergePackageIntoArchive(existingArchive, packageData, options = 
             title: projectTitle,
             url: sourceUrl,
             instructions: packageData?.project?.instructions || "",
-          current: true
-        }
-      ];
+            current: true
+          }
+        ];
   const currentPackageProject =
     packageProjects.find((project) => project.current) || packageProjects[0];
   const projectKey =
@@ -204,11 +231,11 @@ export function mergePackageIntoArchive(existingArchive, packageData, options = 
     sourceUrl ||
     projectTitle;
 
-  let projects = Array.isArray(archive.projects) ? archive.projects : [];
-  let accounts = Array.isArray(archive.accounts) ? archive.accounts : [];
-  let chats = Array.isArray(archive.chats) ? archive.chats : [];
-  let messages = Array.isArray(archive.messages) ? archive.messages : [];
-  let files = Array.isArray(archive.files) ? archive.files : [];
+  let projects: ProjectRecord[] = Array.isArray(archive.projects) ? archive.projects : [];
+  let accounts: AccountRecord[] = Array.isArray(archive.accounts) ? archive.accounts : [];
+  let chats: ChatRecord[] = Array.isArray(archive.chats) ? archive.chats : [];
+  let messages: MessageRecord[] = Array.isArray(archive.messages) ? archive.messages : [];
+  let files: FileRecord[] = Array.isArray(archive.files) ? archive.files : [];
 
   accounts = upsertByKey(
     accounts,
@@ -263,7 +290,7 @@ export function mergePackageIntoArchive(existingArchive, packageData, options = 
   const existingMessageKeys = new Set(messages.map(messageKey));
 
   for (const message of packageData?.messages || []) {
-    const nextMessage = {
+    const nextMessage: MessageRecord = {
       id: messageKey({
         chatUrl: defaultChatKey,
         role: message.role || "message",
@@ -297,8 +324,8 @@ export function mergePackageIntoArchive(existingArchive, packageData, options = 
         projectKey,
         accountKey,
         accountLabel: account.label,
-        chatUrl: file.chatUrl || defaultChatUrl,
-        chatKey: file.chatKey || defaultChatKey,
+        chatUrl: (file.chatUrl as string | null | undefined) || defaultChatUrl,
+        chatKey: (file.chatKey as string | undefined) || defaultChatKey,
         capturedAt: packageData?.createdAt || now
       },
       "key"
@@ -319,7 +346,7 @@ export function mergePackageIntoArchive(existingArchive, packageData, options = 
   };
 }
 
-export function summarizeArchive(archive) {
+export function summarizeArchive(archive: Partial<OfflineArchive> | null | undefined): ArchiveSummary {
   return {
     projects: archive?.projects?.length || 0,
     accounts: archive?.accounts?.length || 0,
@@ -330,7 +357,7 @@ export function summarizeArchive(archive) {
   };
 }
 
-function escapeHtml(value) {
+function escapeHtml(value: unknown): string {
   return String(value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -339,7 +366,7 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-export function renderOfflineChatHtml(archive) {
+export function renderOfflineChatHtml(archive: Partial<OfflineArchive> | null | undefined): string {
   const projects = archive?.projects || [];
   const chats = archive?.chats || [];
   const messages = archive?.messages || [];
@@ -379,7 +406,7 @@ export function renderOfflineChatHtml(archive) {
     .join("");
 }
 
-function renderChatBlock(chat, messages) {
+function renderChatBlock(chat: Partial<ChatRecord>, messages: MessageRecord[]): string {
   const chatMessages = messages.filter(
     (message) => message.chatKey === chat.key || message.chatUrl === chat.url
   );

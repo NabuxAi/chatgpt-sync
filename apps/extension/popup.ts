@@ -1,18 +1,20 @@
-import { saveToSession, loadFromSession, clearSession } from "./session-vault.js";
+import { saveToSession, loadFromSession, clearSession } from "./session-vault.ts";
+import type { MemoryPackage } from "./types.ts";
 
-let currentPackage = null;
+let currentPackage: MemoryPackage | null = null;
 
-const $ = (selector) => document.querySelector(selector);
+const $ = <T extends HTMLElement = HTMLElement>(selector: string): T =>
+  document.querySelector<T>(selector) as T;
 
-function setLoading(isLoading) {
+function setLoading(isLoading: boolean): void {
   $("#captureCard").classList.toggle("is-loading", isLoading);
 }
 
-function setStatus(message) {
+function setStatus(message: string): void {
   $("#status").textContent = message;
 }
 
-function updateStats(data) {
+function updateStats(data: Partial<MemoryPackage> | null | undefined): void {
   const projectCount = data?.projects?.length || (data?.project?.title ? 1 : 0);
   $("#projectCount").textContent = String(projectCount);
   $("#chatCount").textContent = String(data?.chats?.length || 0);
@@ -20,11 +22,11 @@ function updateStats(data) {
   $("#fileCount").textContent = String(data?.files?.length || 0);
 }
 
-function renderDetectedList(data) {
+function renderDetectedList(data: Partial<MemoryPackage> | null | undefined): void {
   const list = $("#detectedList");
   list.innerHTML = "";
 
-  const items = [];
+  const items: Array<{ label: string; value: string }> = [];
 
   if (data?.projects?.length) {
     for (const project of data.projects) {
@@ -74,7 +76,7 @@ function renderDetectedList(data) {
   }
 }
 
-function downloadJson(data) {
+function downloadJson(data: Partial<MemoryPackage>): void {
   const title = data?.project?.title || "chatgpt-project";
   const safeTitle = title
     .toLowerCase()
@@ -94,7 +96,7 @@ function downloadJson(data) {
   URL.revokeObjectURL(url);
 }
 
-function applyPackage(data) {
+function applyPackage(data: MemoryPackage | null): void {
   if (!data) return;
 
   currentPackage = data;
@@ -102,16 +104,9 @@ function applyPackage(data) {
   renderDetectedList(data);
 }
 
-async function requestScanFromBackground(notes) {
-  return chrome.runtime.sendMessage({
-    type: "CHATGPT_SYNC_SCAN_NOW",
-    notes
-  });
-}
-
 // When Scan Page has to open ChatGPT or wait for login, the popup closes before
 // the background finishes. On reopen, surface whatever the background captured.
-async function loadPendingScanResult() {
+async function loadPendingScanResult(): Promise<void> {
   try {
     const response = await chrome.runtime.sendMessage({
       type: "CHATGPT_SYNC_GET_LAST_SCAN_RESULT"
@@ -134,7 +129,7 @@ async function loadPendingScanResult() {
   }
 }
 
-async function runAutoSyncNow() {
+async function runAutoSyncNow(): Promise<number> {
   const response = await chrome.runtime.sendMessage({
     type: "CHATGPT_SYNC_RUN_AUTO_SYNC"
   });
@@ -146,15 +141,15 @@ async function runAutoSyncNow() {
   return response.synced || 0;
 }
 
-let scanBarTimer = null;
+let scanBarTimer: number | null = null;
 
 // Short synthesized "scan" sweep using the Web Audio API (no bundled asset).
-function playScanSound() {
+function playScanSound(): void {
   try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
     if (!Ctx) return;
 
-    const ctx = new Ctx();
+    const ctx: AudioContext = new Ctx();
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -176,7 +171,7 @@ function playScanSound() {
   }
 }
 
-function startScanBar() {
+function startScanBar(): void {
   const bar = $("#scanBar");
   const fill = $("#scanBarFill");
   if (!bar || !fill) return;
@@ -185,15 +180,15 @@ function startScanBar() {
   fill.style.width = "6%";
 
   let progress = 6;
-  window.clearInterval(scanBarTimer);
+  window.clearInterval(scanBarTimer ?? undefined);
   scanBarTimer = window.setInterval(() => {
     progress = Math.min(92, progress + Math.random() * 11);
     fill.style.width = `${progress}%`;
   }, 220);
 }
 
-function finishScanBar(success) {
-  window.clearInterval(scanBarTimer);
+function finishScanBar(success: boolean): void {
+  window.clearInterval(scanBarTimer ?? undefined);
   const bar = $("#scanBar");
   const fill = $("#scanBarFill");
   if (!bar || !fill) return;
@@ -202,7 +197,7 @@ function finishScanBar(success) {
   window.setTimeout(() => bar.classList.remove("active"), success ? 800 : 250);
 }
 
-function pluralPages(count) {
+function pluralPages(count: number): string {
   return `${count} page${count === 1 ? "" : "s"}`;
 }
 
@@ -216,7 +211,7 @@ $("#scanPage").addEventListener("click", async () => {
   try {
     const result = await chrome.runtime.sendMessage({
       type: "CHATGPT_SYNC_SCAN_AND_SYNC",
-      notes: $("#projectNotes").value.trim()
+      notes: $<HTMLTextAreaElement>("#projectNotes").value.trim()
     });
 
     if (!result?.ok) {
@@ -329,7 +324,8 @@ $("#clearSession").addEventListener("click", async () => {
 });
 
 $("#restoreFile").addEventListener("change", async (event) => {
-  const file = event.target.files?.[0];
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
   if (!file) return;
 
   try {
@@ -346,7 +342,7 @@ $("#restoreFile").addEventListener("change", async (event) => {
       chats: data.chats?.length || 0,
       messages: data.messages?.length || 0,
       files: data.files?.length || 0,
-      restoreSteps: data.restore?.steps?.map((step) => step.label) || []
+      restoreSteps: data.restore?.steps?.map((step: { label: string }) => step.label) || []
     }, null, 2);
   } catch (error) {
     $("#restorePreview").textContent = `Invalid backup file: ${error.message}`;

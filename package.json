@@ -4,13 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node scripts/build-extension.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "test": "node --test",
     "build": "node scripts/build-release.mjs"
     "health-check": "node scripts/health-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/chrome": "^0.1.43",
+    "@types/node": "^25.9.3",
     "eslint": "^9.39.4",
-    "globals": "^17.6.0"
+    "globals": "^17.6.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1"
   }
 }
