@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 // Daily project health check.
 //
-// Runs a set of lightweight checks against the repository and produces a
-// machine- and human-readable report:
+// Runs a set of checks against the repository and produces a machine- and
+// human-readable report:
 //   1. Syntax check (`node --check`) on every tracked JS/MJS file.
-//   2. Test suite (`node --test`).
+//   2. Lint (ESLint) — skipped gracefully if dependencies are not installed.
+//   3. Chrome extension manifest validation.
+//   4. Test suite (`node --test`).
+//   5. Dependency audit (`npm audit`) — skipped when there is no lockfile.
 //
 // Behaviour:
 //   - Prints a Markdown report to stdout.
 //   - Writes the same report to the file given by HEALTH_REPORT_FILE
 //     (default: health-report.md) so CI can attach it to an issue.
-//   - Exits 0 when everything passes, 1 when any check fails.
-//
-// It has no third-party dependencies so it can run anywhere Node is available.
+//   - Exits 0 when everything passes, 1 when any check fails. Skipped checks
+//     do not count as failures.
 
 import { spawnSync } from "node:child_process";
-import { readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +55,16 @@ function run(command, args, options = {}) {
   };
 }
 
+function codeBlock(text, maxLines = 200) {
+  return "```\n" + tail(text, maxLines) + "\n```";
+}
+
+function tail(text, maxLines) {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) return text;
+  return ["…(truncated)…", ...lines.slice(-maxLines)].join("\n");
+}
+
 // --- Check 1: syntax check every JS file ---------------------------------
 function syntaxCheck() {
   const files = collectJsFiles(repoRoot).sort();
@@ -61,7 +73,7 @@ function syntaxCheck() {
     const rel = relative(repoRoot, file);
     const result = run(process.execPath, ["--check", file]);
     if (!result.ok) {
-      failures.push(`- \`${rel}\`\n\n  \`\`\`\n  ${result.output.replace(/\n/g, "\n  ")}\n  \`\`\``);
+      failures.push(`- \`${rel}\`\n\n  ${codeBlock(result.output).replace(/\n/g, "\n  ")}`);
     }
   }
   return {
@@ -75,25 +87,91 @@ function syntaxCheck() {
   };
 }
 
-// --- Check 2: test suite -------------------------------------------------
+// --- Check 2: ESLint -----------------------------------------------------
+function lint() {
+  const eslintEntry = join(repoRoot, "node_modules", "eslint", "bin", "eslint.js");
+  if (!existsSync(eslintEntry)) {
+    return {
+      name: "Lint (ESLint)",
+      skipped: true,
+      summary: "Skipped — run `npm ci` to install ESLint first.",
+    };
+  }
+  const result = run(process.execPath, [eslintEntry, "."]);
+  return {
+    name: "Lint (ESLint)",
+    ok: result.ok,
+    summary: result.ok
+      ? result.output
+        ? "No lint errors (warnings only)."
+        : "No lint problems."
+      : "ESLint reported errors.",
+    details: result.ok ? "" : codeBlock(result.output),
+  };
+}
+
+// --- Check 3: extension manifest validation ------------------------------
+function manifestCheck() {
+  const manifestPath = join(repoRoot, "apps", "extension", "manifest.json");
+  const name = "Extension manifest (manifest.json)";
+  if (!existsSync(manifestPath)) {
+    return { name, skipped: true, summary: "Skipped — manifest.json not found." };
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch (err) {
+    return {
+      name,
+      ok: false,
+      summary: "manifest.json is not valid JSON.",
+      details: codeBlock(err.message),
+    };
+  }
+  const problems = [];
+  if (manifest.manifest_version !== 3) {
+    problems.push(`\`manifest_version\` should be 3 (found ${JSON.stringify(manifest.manifest_version)}).`);
+  }
+  for (const field of ["name", "version"]) {
+    if (!manifest[field]) problems.push(`Missing required field \`${field}\`.`);
+  }
+  return {
+    name,
+    ok: problems.length === 0,
+    summary: problems.length === 0 ? "Valid MV3 manifest." : `${problems.length} problem(s) found.`,
+    details: problems.length === 0 ? "" : problems.map((p) => `- ${p}`).join("\n"),
+  };
+}
+
+// --- Check 4: test suite -------------------------------------------------
 function testSuite() {
   const result = run(process.execPath, ["--test"]);
   return {
     name: "Test suite (node --test)",
     ok: result.ok,
     summary: result.ok ? "All tests passed." : "Test suite reported failures.",
-    details: result.ok ? "" : "```\n" + tail(result.output, 200) + "\n```",
+    details: result.ok ? "" : codeBlock(result.output),
   };
 }
 
-function tail(text, maxLines) {
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
-  return ["…(truncated)…", ...lines.slice(-maxLines)].join("\n");
+// --- Check 5: dependency audit -------------------------------------------
+function dependencyAudit() {
+  const name = "Dependency audit (npm audit)";
+  if (!existsSync(join(repoRoot, "package-lock.json"))) {
+    return { name, skipped: true, summary: "Skipped — no package-lock.json." };
+  }
+  // Only fail on high/critical vulnerabilities in production dependencies.
+  const result = run("npm", ["audit", "--omit=dev", "--audit-level=high"]);
+  return {
+    name,
+    ok: result.ok,
+    summary: result.ok ? "No high/critical production vulnerabilities." : "Vulnerabilities found.",
+    details: result.ok ? "" : codeBlock(result.output),
+  };
 }
 
 function buildReport(checks) {
-  const failed = checks.filter((c) => !c.ok);
+  const failed = checks.filter((c) => !c.skipped && !c.ok);
   const timestamp = new Date().toISOString();
   const lines = [];
   lines.push(`# Project health report`);
@@ -107,7 +185,8 @@ function buildReport(checks) {
   lines.push("| Check | Result |");
   lines.push("| --- | --- |");
   for (const c of checks) {
-    lines.push(`| ${c.name} | ${c.ok ? "✅ pass" : "❌ fail"} — ${c.summary} |`);
+    const icon = c.skipped ? "⚠️ skipped" : c.ok ? "✅ pass" : "❌ fail";
+    lines.push(`| ${c.name} | ${icon} — ${c.summary} |`);
   }
   if (failed.length > 0) {
     lines.push("");
@@ -128,9 +207,9 @@ function buildReport(checks) {
 }
 
 function main() {
-  const checks = [syntaxCheck(), testSuite()];
+  const checks = [syntaxCheck(), lint(), manifestCheck(), testSuite(), dependencyAudit()];
   const report = buildReport(checks);
-  const ok = checks.every((c) => c.ok);
+  const ok = checks.every((c) => c.skipped || c.ok);
 
   const reportFile = process.env.HEALTH_REPORT_FILE || join(repoRoot, "health-report.md");
   try {

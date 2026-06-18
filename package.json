@@ -6,5 +6,10 @@
   "scripts": {
     "test": "node --test",
     "health-check": "node scripts/health-check.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0"
   }
 }
