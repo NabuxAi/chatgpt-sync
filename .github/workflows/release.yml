@@ -1,0 +1,52 @@
+name: Release
+
+# Cuts a GitHub Release with browser packages whenever a version tag is pushed.
+#
+#   git tag v0.3.0
+#   git push origin v0.3.0
+#
+# You can also trigger it manually from the Actions tab (workflow_dispatch).
+#
+# Optional: set a repository secret named CRX_PRIVATE_KEY (the PEM contents of an
+# RSA key) to sign the CRX with a stable extension ID across releases. Without it,
+# a throwaway key is generated and the CRX id will differ each run.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build browser packages
+        env:
+          CRX_PRIVATE_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+        run: npm run build
+
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            dist/chatgpt-sync-chrome-*.zip
+            dist/chatgpt-sync-chrome-*.crx
+            dist/chatgpt-sync-firefox-*.xpi
+            dist/SHA256SUMS.txt

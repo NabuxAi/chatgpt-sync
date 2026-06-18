@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "build": "node scripts/build-release.mjs"
     "health-check": "node scripts/health-check.mjs"
   },
   "devDependencies": {
