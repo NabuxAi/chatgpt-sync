@@ -37,16 +37,26 @@ import {
 import { resolve, join } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const extDir = resolve(root, "apps/extension");
+// Package the *compiled* extension, not the TypeScript source. Run `npm run
+// build` first (the `build:release` npm script chains it for you).
+const extDir = resolve(root, "apps/extension/dist");
 const distDir = resolve(root, "dist");
 const stageDir = resolve(distDir, ".stage");
+
+if (!existsSync(join(extDir, "manifest.json"))) {
+  throw new Error(
+    `Compiled extension not found at ${extDir}. Run \`npm run build\` first ` +
+      "(or use `npm run build:release`, which builds then packages)."
+  );
+}
 
 const manifest = JSON.parse(readFileSync(join(extDir, "manifest.json"), "utf8"));
 const version = manifest.version;
 const FIREFOX_ADDON_ID = "chatgpt-sync@nabux.ai";
 
-// Files that should never ship inside a packaged extension.
-const isPackagedFile = (path) => !path.endsWith(".test.js");
+// Files that should never ship inside a packaged extension. The compiled dist
+// contains no tests, but guard anyway in case the layout changes.
+const isPackagedFile = (path) => !/\.test\.[cm]?[jt]s$/.test(path);
 
 function u32le(value) {
   const buffer = Buffer.alloc(4);

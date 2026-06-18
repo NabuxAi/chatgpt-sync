@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-extension.ts",
+    "build:release": "npm run build && node scripts/build-release.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "node --test",
-    "build": "node scripts/build-release.mjs"
-    "health-check": "node scripts/health-check.mjs"
+    "health-check": "node scripts/health-check.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
