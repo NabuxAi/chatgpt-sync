@@ -66,6 +66,27 @@ For larger backups, use **Start Gentle Background Sync**. It queues discovered p
 ```txt
 apps/extension/        Chrome extension MVP
 docs/                  Product, security, and technical specs
+scripts/               Maintenance and CI helper scripts
+.github/workflows/     Automated GitHub Actions workflows
+```
+
+## Automated daily health check
+
+A scheduled GitHub Action (`.github/workflows/daily-health-check.yml`) runs once
+a day. It executes `npm run health-check`, which:
+
+- syntax-checks every JS/MJS file with `node --check`, and
+- runs the test suite with `node --test`.
+
+If any check fails, the workflow opens a GitHub issue (labelled
+`automated-health-check`) containing the failure report. A single rolling issue
+is reused — it is updated on each failing run and closed automatically once all
+checks pass again, so the tracker is never spammed.
+
+Run the same checks locally with:
+
+```sh
+npm run health-check
 ```
 
 ## Security principle
