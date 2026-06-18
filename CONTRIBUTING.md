@@ -1,0 +1,329 @@
+# Contributing to ChatGPT Sync
+
+First off — **thank you** for taking the time to contribute! 🎉
+
+ChatGPT Sync is a small, dependency-light, local-first browser extension. That
+makes it a friendly project to jump into: there is no build step, no framework
+to learn, and the core logic is plain JavaScript with fast unit tests. This guide
+explains how the project is put together and how to get your first change merged.
+
+If anything here is unclear, open an issue — improving this document is itself a
+welcome contribution.
+
+---
+
+## Table of contents
+
+- [Code of conduct](#code-of-conduct)
+- [Ways to contribute](#ways-to-contribute)
+- [Prerequisites](#prerequisites)
+- [Get the code running in 5 minutes](#get-the-code-running-in-5-minutes)
+- [Project structure](#project-structure)
+- [Architecture overview](#architecture-overview)
+- [Message protocol](#message-protocol)
+- [Running tests](#running-tests)
+- [End-to-end / live runner](#end-to-end--live-runner)
+- [Coding standards](#coding-standards)
+- [Security principles (please read)](#security-principles-please-read)
+- [Commit & pull request guidelines](#commit--pull-request-guidelines)
+- [Good first issues](#good-first-issues)
+
+---
+
+## Code of conduct
+
+Be kind, be patient, assume good intent. We want this to be a welcoming place for
+first-time open-source contributors and seasoned extension developers alike.
+Harassment of any kind is not tolerated.
+
+---
+
+## Ways to contribute
+
+You do not need to write code to be valuable here:
+
+- 🐛 **Report bugs** — open an issue describing what happened, what you expected,
+  your browser/version, and steps to reproduce.
+- 💡 **Suggest features** — especially ideas that respect the project's
+  [security principles](#security-principles-please-read).
+- 📖 **Improve docs** — fix typos, clarify wording, translate this guide, or add
+  examples. The repo's docs live in [`docs/`](docs/).
+- 🎨 **Design** — icons, popup UI polish, offline-reader UX.
+- 🧪 **Add tests** — the unit-test suite is fast and easy to extend.
+- 💻 **Write code** — pick up a [good first issue](#good-first-issues) or anything
+  from the roadmap in the [README](README.md#roadmap).
+
+---
+
+## Prerequisites
+
+- **Node.js 20+** — used only to run the unit tests (`node --test`). There is no
+  bundler and no `node_modules` for the extension itself.
+- A **Chromium-based browser** (Chrome, Brave, Edge) to load the extension. The
+  manifest is Manifest V3.
+- Git and a GitHub account.
+
+That's it. The extension ships as plain files you load "unpacked" — no compile
+step.
+
+---
+
+## Get the code running in 5 minutes
+
+```bash
+# 1. Fork the repo on GitHub, then clone your fork
+git clone https://github.com/<your-username>/chatgpt-sync.git
+cd chatgpt-sync
+
+# 2. Run the tests to confirm everything is green
+npm test
+```
+
+### Load the extension in your browser
+
+1. Open `chrome://extensions` (or `brave://extensions`, `edge://extensions`).
+2. Turn on **Developer mode** (top-right toggle).
+3. Click **Load unpacked**.
+4. Select the [`apps/extension`](apps/extension) folder.
+5. Pin **ChatGPT Sync** to your toolbar and open it on a `https://chatgpt.com/*`
+   tab.
+
+When you change a file, return to `chrome://extensions` and click the **reload**
+(↻) icon on the ChatGPT Sync card to pick up your edits. Content-script changes
+also require reloading the ChatGPT tab.
+
+---
+
+## Project structure
+
+```txt
+chatgpt-sync/
+├── apps/
+│   └── extension/              # The Manifest V3 Chrome extension (all runtime code)
+│       ├── manifest.json       # MV3 manifest: permissions, background SW, content scripts
+│       ├── background.js       # Service worker: alarms, sync orchestration, message router
+│       ├── content.js          # Injected into ChatGPT pages: DOM + same-session API capture
+│       ├── content-script-bridge.js  # Helper to message the content script (with inject fallback)
+│       ├── sync-core.js        # Pure logic: build packages, merge archive, render offline HTML
+│       ├── session-vault.js    # chrome.storage.session wrapper (the "memory bridge" package)
+│       ├── offline-vault.js    # chrome.storage.local wrapper (the offline archive)
+│       ├── deep-sync-planner.js   # Plans the queue of pages for deep / gentle sync
+│       ├── gentle-sync-policy.js  # Rate-limit constants + 429 detection
+│       ├── popup.{html,js,css}      # Toolbar popup UI
+│       ├── offline.{html,js,css}    # Static offline reader (ChatGPT-like layout)
+│       ├── sync-progress.{html,js,css}  # Gentle-sync progress page
+│       ├── quickstart.{html,js,css}     # Onboarding page
+│       ├── icons/              # Extension icons
+│       └── *.test.js           # Unit tests, colocated next to the module they cover
+├── docs/                       # Product spec & backup schema
+│   ├── product-spec.md
+│   └── backup-schema.md
+├── scripts/
+│   └── live-extension-runner.mjs   # Playwright end-to-end smoke test
+├── package.json                # Just the `test` script — no runtime deps
+└── README.md
+```
+
+**Rule of thumb:** business logic that does not touch `chrome.*` APIs belongs in
+`sync-core.js` (or another pure module) so it can be unit-tested directly. Thin
+`chrome.*` wrappers (`session-vault.js`, `offline-vault.js`) stay small and
+delegate to the pure logic.
+
+---
+
+## Architecture overview
+
+ChatGPT Sync has four runtime surfaces that talk to each other through Chrome's
+message passing:
+
+```
+┌──────────────┐   messages    ┌──────────────────┐   scripting/messages   ┌───────────────┐
+│  popup.js    │ ────────────► │  background.js   │ ─────────────────────► │  content.js   │
+│ (toolbar UI) │ ◄──────────── │ (service worker) │ ◄───────────────────── │ (ChatGPT tab) │
+└──────────────┘               └──────────────────┘                        └───────────────┘
+        │                               │
+        │ session vault                 │ offline vault + alarms
+        ▼                               ▼
+ chrome.storage.session         chrome.storage.local
+                                        ▲
+                                        │ reads cached chats
+                                 ┌──────────────┐
+                                 │  offline.js  │  (static offline reader page)
+                                 └──────────────┘
+```
+
+- **`content.js`** runs inside the ChatGPT tab. It scans the visible DOM for the
+  project title, instructions, chat links, and rendered messages, and — when a
+  signed-in session is available — calls ChatGPT's *same-origin* backend
+  endpoints to capture the current conversation more completely. It never asks
+  for or stores tokens/cookies.
+- **`background.js`** is the brain. It owns the `chrome.alarms` that drive the
+  10-minute auto-sync and the gentle background sync, orchestrates deep sync by
+  opening queued pages one at a time, and routes all runtime messages.
+- **`popup.js`** is the user-facing control panel: Scan Page, save to session
+  memory, export JSON, start gentle sync, open the offline reader.
+- **`offline.js`** renders cached chats from `chrome.storage.local` so they can
+  be read with no network access.
+- **`sync-core.js`** is the pure heart: `buildMemoryPackage()`,
+  `mergePackageIntoArchive()`, `summarizeArchive()`, and
+  `renderOfflineChatHtml()`. Most logic changes should land here with tests.
+
+### Sync modes at a glance
+
+| Mode | Trigger | What it does |
+| --- | --- | --- |
+| **Scan Page** | Popup button | One-shot capture of the active tab. |
+| **Auto sync** | `chrome.alarms`, every `AUTO_SYNC_PERIOD_MINUTES` (10) | Re-syncs currently open ChatGPT tabs. |
+| **Gentle / deep sync** | Popup button | Queues discovered project/chat pages and opens **one per step** with a multi-minute delay; backs off ≥30 min on HTTP 429. |
+
+The conservative timing lives in [`gentle-sync-policy.js`](apps/extension/gentle-sync-policy.js)
+and the queue planning in [`deep-sync-planner.js`](apps/extension/deep-sync-planner.js).
+Please keep these polite — see the rate-limit posture in the
+[product spec](docs/product-spec.md#rate-limit-posture).
+
+---
+
+## Message protocol
+
+All cross-surface communication uses `chrome.runtime` / `chrome.tabs` messages
+with a `type` string. When you add a feature, follow this convention and document
+the new message here.
+
+| Message type | From → To | Purpose |
+| --- | --- | --- |
+| `CHATGPT_SYNC_SCAN_PAGE` | background/popup → content | Scan the active ChatGPT page (DOM + same-session API). |
+| `CHATGPT_SYNC_CHECK_LOGIN` | background → content | Detect whether the tab is signed in. |
+| `CHATGPT_SYNC_SCAN_NOW` | popup → background | Scan the active tab and return a package. |
+| `CHATGPT_SYNC_SCAN_AND_SYNC` | popup → background | Scan, then merge into the offline archive. |
+| `CHATGPT_SYNC_RUN_AUTO_SYNC` | popup/offline → background | Run an auto-sync pass over open tabs. |
+| `CHATGPT_SYNC_RUN_DEEP_SYNC` | popup → background | Start a gentle deep sync from the active tab. |
+| `CHATGPT_SYNC_START_GENTLE_SYNC` | popup → background | Begin the gentle background-sync job. |
+| `CHATGPT_SYNC_STOP_GENTLE_SYNC` | popup → background | Cancel the gentle-sync job. |
+| `CHATGPT_SYNC_GET_GENTLE_SYNC_STATUS` | sync-progress → background | Read current gentle-sync state. |
+| `CHATGPT_SYNC_GET_LAST_SCAN_RESULT` | popup → background | Retrieve (and clear) the last scan result. |
+
+Message handlers that respond asynchronously **must `return true`** from the
+`onMessage` listener so the channel stays open for `sendResponse`.
+
+---
+
+## Running tests
+
+The unit tests use Node's built-in test runner — no extra dependencies.
+
+```bash
+npm test            # runs `node --test` across all *.test.js files
+```
+
+Tests are colocated with the modules they cover (e.g. `sync-core.test.js` lives
+next to `sync-core.js`). They `import` the pure modules and assert behaviour with
+`node:assert/strict`. `manifest.test.js` guards the manifest's critical fields.
+
+**Every behaviour change should come with a test.** Because the core logic is
+pure, this is usually quick: import the function, feed it sample scan data, assert
+on the resulting package or archive. Use the existing tests as templates.
+
+---
+
+## End-to-end / live runner
+
+[`scripts/live-extension-runner.mjs`](scripts/live-extension-runner.mjs) loads the
+real extension into a Chromium browser via Playwright, serves fake ChatGPT pages,
+and exercises scan → auto-sync → offline-reader end to end, saving screenshots to
+`tmp/live-extension-test/`.
+
+This is an optional smoke test, not part of `npm test`. It requires Playwright and
+currently points at a hard-coded Brave path:
+
+```js
+executablePath: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+```
+
+To run it locally you will need `npx playwright install` and to adjust that path
+for your OS/browser. Making the runner cross-platform (auto-detect the browser) is
+a great contribution — see [good first issues](#good-first-issues).
+
+---
+
+## Coding standards
+
+The codebase is intentionally simple. Match the style you see around you:
+
+- **Vanilla ES modules.** Use `import`/`export`; the manifest declares the
+  service worker as `"type": "module"`. No bundler, no TypeScript, no JSX.
+- **No new runtime dependencies** without discussion. Keeping the extension
+  dependency-free is a feature (smaller attack surface, easier review, instant
+  load). Dev-only tooling (like Playwright) is fine.
+- **2-space indentation**, double quotes, semicolons — consistent with existing
+  files.
+- **Keep `chrome.*` access in thin wrappers.** Put testable logic in pure modules.
+- **Escape untrusted content.** Anything captured from a page and later rendered
+  (e.g. in the offline reader) must be escaped — see `escapeHtml` /
+  `renderOfflineChatHtml`. Never build DOM from raw captured text.
+- **Small, focused functions** with clear names, mirroring the current code.
+
+---
+
+## Security principles (please read)
+
+This is the most important section. ChatGPT Sync is deliberately **honest and
+safe**, and contributions must preserve that. From the README:
+
+> If a feature requires stealing or copying private ChatGPT session credentials,
+> it should not be implemented.
+
+Concretely, **do not** add code that:
+
+- ❌ asks the user to paste a password, bearer token, session cookie, Cloudflare
+  clearance value, or API key;
+- ❌ reads, exfiltrates, or stores session tokens/cookies;
+- ❌ writes secrets, signed download URLs, or raw private API responses into a
+  backup file (see the [backup schema](docs/backup-schema.md#privacy-rule));
+- ❌ hammers ChatGPT's endpoints or tries to bypass rate limits / protections —
+  respect the [rate-limit posture](docs/product-spec.md#rate-limit-posture).
+
+What **is** allowed: using the browser's *existing* signed-in session from an
+open ChatGPT tab to call same-origin endpoints, exactly as the page itself would.
+
+If a change touches capture, storage, or network behaviour, call that out
+explicitly in your PR description so reviewers can check it against these rules.
+
+---
+
+## Commit & pull request guidelines
+
+1. **Branch** off `main` with a descriptive name, e.g.
+   `feature/configurable-sync-interval` or `fix/offline-reader-escaping`.
+2. **Keep PRs focused** — one logical change per PR is much easier to review and
+   merge than a large grab-bag.
+3. **Write clear commit messages** in the imperative mood:
+   `Add user-configurable sync interval`.
+4. **Run `npm test`** before pushing and make sure it is green.
+5. **Update docs** when behaviour changes — the README roadmap, the
+   [backup schema](docs/backup-schema.md), and this guide as needed.
+6. **Open a pull request** describing *what* changed and *why*. Link any related
+   issue. If your change affects capture/storage/network, confirm it respects the
+   [security principles](#security-principles-please-read).
+
+Maintainers will review as soon as they can. Don't be discouraged by review
+feedback — it's how we keep the project clean and trustworthy.
+
+---
+
+## Good first issues
+
+Looking for a place to start? These come straight from the
+[roadmap](README.md#roadmap) and the notes above:
+
+- ⏱️ **User-configurable sync interval** — currently hard-coded to
+  `AUTO_SYNC_PERIOD_MINUTES = 10` in `sync-core.js`. Add a setting in the popup
+  and persist it.
+- 📁 **File checklist & manual re-upload flow** — guide users through re-uploading
+  captured files during restore.
+- 🔒 **Optional encrypted local vault** — encrypt the offline archive at rest.
+- 🖥️ **Make the live runner cross-platform** — auto-detect the browser instead of
+  the hard-coded Brave path in `scripts/live-extension-runner.mjs`.
+- 🧪 **Add tests** for any module that feels under-covered.
+- 🌍 **Translate the docs** (including this guide) into other languages.
+
+Pick one, comment on the issue (or open one), and have at it. Welcome aboard! 🚀

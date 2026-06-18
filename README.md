@@ -66,7 +66,46 @@ For larger backups, use **Start Gentle Background Sync**. It queues discovered p
 ```txt
 apps/extension/        Chrome extension MVP
 docs/                  Product, security, and technical specs
+scripts/               Tooling (e.g. the Playwright live runner)
 ```
+
+## For developers
+
+This is a dependency-light, local-first Manifest V3 extension — there is **no
+build step**, so you can be productive in minutes.
+
+```bash
+# Run the unit tests (Node 20+, no extra dependencies)
+npm test
+```
+
+To try it in your browser:
+
+1. Open `chrome://extensions` and enable **Developer mode**.
+2. Click **Load unpacked** and select the `apps/extension` folder.
+3. Open the popup on a `https://chatgpt.com/*` tab.
+
+The runtime has four surfaces that talk over Chrome message passing:
+
+| File | Role |
+| --- | --- |
+| `apps/extension/content.js` | Scans the ChatGPT page (DOM + same-session API). |
+| `apps/extension/background.js` | Service worker: alarms, sync orchestration, message router. |
+| `apps/extension/popup.js` | Toolbar control panel. |
+| `apps/extension/offline.js` | Static offline reader for cached chats. |
+| `apps/extension/sync-core.js` | Pure, unit-tested logic (build package, merge archive, render). |
+
+## Contributing
+
+Contributions of every kind are welcome — code, docs, design, bug reports, and
+tests. **See [CONTRIBUTING.md](CONTRIBUTING.md)** for a full developer guide:
+architecture, the message protocol, how to run tests, coding standards, the
+project's security principles, and a list of good first issues.
+
+A quick note on what we will and won't build: if a feature requires stealing or
+copying private ChatGPT session credentials, it should not be implemented. Please
+read the [security principles](CONTRIBUTING.md#security-principles-please-read)
+before sending capture/storage/network changes.
 
 ## Security principle
 
