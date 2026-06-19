@@ -1,4 +1,5 @@
-import { AUTO_SYNC_PERIOD_MINUTES, buildMemoryPackage } from "./sync-core.ts";
+import { buildMemoryPackage } from "./sync-core.ts";
+import { loadSyncIntervalMinutes, SYNC_INTERVAL_KEY } from "./settings.ts";
 import { mergeAndSaveOfflineArchive } from "./offline-vault.ts";
 import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.ts";
 import { planDeepSyncTargets, planNewChatTargets } from "./deep-sync-planner.ts";
@@ -42,8 +43,9 @@ function isChatGptUrl(url = ""): boolean {
 }
 
 async function ensureAutoSyncAlarm(): Promise<void> {
+  const periodInMinutes = await loadSyncIntervalMinutes();
   await chrome.alarms.create(AUTO_SYNC_ALARM, {
-    periodInMinutes: AUTO_SYNC_PERIOD_MINUTES
+    periodInMinutes
   });
 }
 
@@ -644,6 +646,13 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onStartup.addListener(() => {
   ensureAutoSyncAlarm();
+});
+
+// Re-arm the auto-sync alarm immediately when the user changes the interval.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes[SYNC_INTERVAL_KEY]) {
+    ensureAutoSyncAlarm();
+  }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {

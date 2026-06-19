@@ -1,4 +1,5 @@
 import { saveToSession, loadFromSession, clearSession } from "./session-vault.ts";
+import { loadSyncIntervalMinutes, saveSyncIntervalMinutes } from "./settings.ts";
 import type { MemoryPackage } from "./types.ts";
 
 let currentPackage: MemoryPackage | null = null;
@@ -349,4 +350,16 @@ $("#restoreFile").addEventListener("change", async (event) => {
   }
 });
 
+async function initSyncInterval(): Promise<void> {
+  $<HTMLInputElement>("#syncInterval").value = String(await loadSyncIntervalMinutes());
+}
+
+$("#saveSyncInterval").addEventListener("click", async () => {
+  const input = $<HTMLInputElement>("#syncInterval");
+  const saved = await saveSyncIntervalMinutes(input.value);
+  input.value = String(saved);
+  $("#settingsStatus").textContent = `Auto-sync set to every ${saved} minute${saved === 1 ? "" : "s"}.`;
+});
+
+initSyncInterval();
 loadPendingScanResult();
