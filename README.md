@@ -84,7 +84,7 @@ For larger backups, use **Start Gentle Background Sync**. It queues discovered p
 - [x] Assisted restore screen
 - [ ] File checklist and manual re-upload flow
 - [ ] Optional encrypted local vault
-- [ ] User-configurable sync interval
+- [x] User-configurable sync interval
 - [ ] Official API support if OpenAI exposes Projects import/export
 
 ## Repository structure

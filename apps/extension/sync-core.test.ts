@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 
 import {
   AUTO_SYNC_PERIOD_MINUTES,
+  MAX_AUTO_SYNC_PERIOD_MINUTES,
+  MIN_AUTO_SYNC_PERIOD_MINUTES,
   buildMemoryPackage,
   createEmptyOfflineArchive,
   mergePackageIntoArchive,
+  normalizeSyncIntervalMinutes,
   renderOfflineChatHtml
 } from "./sync-core.ts";
 
@@ -418,4 +421,25 @@ test("renderOfflineChatHtml escapes cached content for the static offline reader
 
 test("AUTO_SYNC_PERIOD_MINUTES keeps automatic sync conservative", () => {
   assert.ok(AUTO_SYNC_PERIOD_MINUTES >= 10);
+});
+
+test("normalizeSyncIntervalMinutes clamps, rounds, and falls back to the default", () => {
+  // Sane defaults and bounds.
+  assert.ok(MIN_AUTO_SYNC_PERIOD_MINUTES <= AUTO_SYNC_PERIOD_MINUTES);
+  assert.ok(AUTO_SYNC_PERIOD_MINUTES <= MAX_AUTO_SYNC_PERIOD_MINUTES);
+
+  // In-range values pass through (rounded).
+  assert.equal(normalizeSyncIntervalMinutes(30), 30);
+  assert.equal(normalizeSyncIntervalMinutes(12.6), 13);
+  assert.equal(normalizeSyncIntervalMinutes("45"), 45);
+
+  // Out-of-range values clamp to the bounds.
+  assert.equal(normalizeSyncIntervalMinutes(1), MIN_AUTO_SYNC_PERIOD_MINUTES);
+  assert.equal(normalizeSyncIntervalMinutes(0), MIN_AUTO_SYNC_PERIOD_MINUTES);
+  assert.equal(normalizeSyncIntervalMinutes(100000), MAX_AUTO_SYNC_PERIOD_MINUTES);
+
+  // Non-numeric input falls back to the default.
+  assert.equal(normalizeSyncIntervalMinutes("not a number"), AUTO_SYNC_PERIOD_MINUTES);
+  assert.equal(normalizeSyncIntervalMinutes(undefined), AUTO_SYNC_PERIOD_MINUTES);
+  assert.equal(normalizeSyncIntervalMinutes(NaN), AUTO_SYNC_PERIOD_MINUTES);
 });

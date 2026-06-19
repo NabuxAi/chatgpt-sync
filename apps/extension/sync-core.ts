@@ -16,6 +16,26 @@ import type {
 
 export const AUTO_SYNC_PERIOD_MINUTES = 10;
 
+// Bounds for the user-configurable auto-sync interval. The floor keeps the
+// background sync polite (see the rate-limit posture in the product spec); the
+// ceiling is one day.
+export const MIN_AUTO_SYNC_PERIOD_MINUTES = 5;
+export const MAX_AUTO_SYNC_PERIOD_MINUTES = 1440;
+
+/**
+ * Coerce an arbitrary user input into a safe auto-sync interval in minutes.
+ * Non-numeric input falls back to the default; valid numbers are rounded and
+ * clamped into [MIN_AUTO_SYNC_PERIOD_MINUTES, MAX_AUTO_SYNC_PERIOD_MINUTES].
+ */
+export function normalizeSyncIntervalMinutes(value: unknown): number {
+  const minutes = Math.round(Number(value));
+  if (!Number.isFinite(minutes)) return AUTO_SYNC_PERIOD_MINUTES;
+  return Math.min(
+    MAX_AUTO_SYNC_PERIOD_MINUTES,
+    Math.max(MIN_AUTO_SYNC_PERIOD_MINUTES, minutes)
+  );
+}
+
 const RESTORE_STEPS: RestoreStep[] = [
   {
     id: "create-project",

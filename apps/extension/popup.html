@@ -64,6 +64,17 @@
       </section>
 
       <section class="card muted">
+        <h2>Settings</h2>
+        <label for="syncInterval">Auto-sync interval (minutes)</label>
+        <input id="syncInterval" type="number" min="5" max="1440" step="1" inputmode="numeric" />
+        <button id="saveSyncInterval" class="secondary">Save interval</button>
+        <p class="hint">
+          How often open ChatGPT tabs are re-synced in the background. Between 5 and 1440 minutes (default 10).
+        </p>
+        <p class="status" id="settingsStatus"></p>
+      </section>
+
+      <section class="card muted">
         <h2>Detected items</h2>
         <div class="list" id="detectedList"></div>
       </section>
