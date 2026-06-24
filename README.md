@@ -145,6 +145,26 @@ npm run typecheck
 npm run build
 ```
 
+### End-to-end test on Chrome
+
+`npm run test:e2e` loads the built extension into a real Chromium and drives the
+three core flows — **sync**, **backup**, and **restore** — against a fully
+mocked ChatGPT origin (including `/api/auth/session` and
+`/backend-api/conversation/<id>`, so the same-session capture path and its
+`Authorization: Bearer` header are exercised too).
+
+```bash
+# One-time: install the Playwright browser
+npx playwright install chromium
+
+# Run the end-to-end test (build + drive Chromium)
+npm run test:e2e
+```
+
+> Loading an extension needs a display. On a headless Linux box, wrap the run in
+> Xvfb: `xvfb-run -a npm run test:e2e`. Screenshots of the offline reader after
+> sync and after restore are written to `tmp/e2e/`.
+
 > Source files use `.ts` import specifiers (e.g. `import … from "./sync-core.ts"`)
 > so Node can run the tests and helper scripts directly via its built-in type
 > stripping. `npm run build` compiles them to plain ES modules — rewriting those

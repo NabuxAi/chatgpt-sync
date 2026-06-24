@@ -238,10 +238,25 @@ function getFilesForChat(chat: ChatRecord): FileRecord[] {
 
 function sourceFileUrl(file: Partial<FileRecord> = {}): string {
   if (file.dataUrl) return "";
-  if (file.sourceDownloadPath?.startsWith("http")) return file.sourceDownloadPath;
-  if (file.sourceDownloadPath?.startsWith("/")) {
-    return `https://chatgpt.com${file.sourceDownloadPath}`;
+
+  const path = file.sourceDownloadPath;
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+
+  if (path.startsWith("/")) {
+    // Honour the origin the file was captured from (chatgpt.com vs
+    // chat.openai.com) instead of hardcoding one.
+    let origin = "https://chatgpt.com";
+    try {
+      if (file.chatUrl && /^https?:\/\//.test(file.chatUrl)) {
+        origin = new URL(file.chatUrl).origin;
+      }
+    } catch (_error) {
+      // Keep the default origin on a malformed chat URL.
+    }
+    return `${origin}${path}`;
   }
+
   return "";
 }
 

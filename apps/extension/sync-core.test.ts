@@ -309,6 +309,45 @@ test("mergePackageIntoArchive attaches current chat messages to the current visi
   assert.match(renderOfflineChatHtml(archive), /Visible answer/);
 });
 
+test("mergePackageIntoArchive keeps messages readable when the page URL has a query string", () => {
+  // The captured tab href carries a query string, but the chat record is keyed
+  // to the clean /c/<id> URL. Messages must still attach to that chat.
+  const packageData = buildMemoryPackage(
+    {
+      url: "https://chatgpt.com/c/with-query?model=gpt-5&foo=bar",
+      project: {
+        title: "Query Project",
+        instructions: ""
+      },
+      chats: [
+        {
+          title: "Conversation",
+          url: "https://chatgpt.com/c/with-query"
+        }
+      ],
+      messages: [
+        {
+          role: "assistant",
+          text: "This message must not be orphaned."
+        }
+      ]
+    },
+    {
+      now: "2026-05-29T10:00:00.000Z"
+    }
+  );
+
+  const archive = mergePackageIntoArchive(createEmptyOfflineArchive(), packageData, {
+    now: "2026-05-29T10:01:00.000Z"
+  });
+
+  const chat = archive.chats.find((entry) => entry.url === "https://chatgpt.com/c/with-query");
+  assert.ok(chat, "the clean conversation chat is stored");
+  const message = archive.messages[0];
+  assert.equal(message.chatKey, chat?.key);
+  assert.match(renderOfflineChatHtml(archive), /This message must not be orphaned\./);
+});
+
 test("mergePackageIntoArchive deduplicates chats and visible messages across automatic syncs", () => {
   const firstPackage = buildMemoryPackage(
     {

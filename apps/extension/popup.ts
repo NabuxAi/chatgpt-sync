@@ -142,6 +142,49 @@ async function runAutoSyncNow(): Promise<number> {
   return response.synced || 0;
 }
 
+interface ImportSummary {
+  projects: number;
+  chats: number;
+  messages: number;
+  files: number;
+}
+
+// Merges a loaded backup package into the offline archive so the Offline Reader
+// can actually display the restored chats (the real "restore" step).
+async function importPackageIntoArchive(packageData: MemoryPackage): Promise<ImportSummary> {
+  const response = await chrome.runtime.sendMessage({
+    type: "CHATGPT_SYNC_IMPORT_PACKAGE",
+    package: packageData
+  });
+
+  if (!response?.ok) {
+    throw new Error(response?.error || "Could not restore the backup into the offline archive.");
+  }
+
+  return response.summary as ImportSummary;
+}
+
+// Restores whatever is currently loaded (from a file or browser memory) into the
+// offline archive and reports the result in the restore preview.
+async function restoreCurrentPackageIntoArchive(): Promise<void> {
+  if (!currentPackage) {
+    $("#restorePreview").textContent = "Load a backup file or browser memory package first.";
+    return;
+  }
+
+  try {
+    const summary = await importPackageIntoArchive(currentPackage);
+    $("#restorePreview").textContent =
+      `Restored into the Offline Reader.\n` +
+      `Projects: ${summary.projects}\nChats: ${summary.chats}\n` +
+      `Messages: ${summary.messages}\nFiles: ${summary.files}\n\n` +
+      `Open the Offline Reader to read the restored chats.`;
+    setStatus("Backup restored into the Offline Reader.");
+  } catch (error) {
+    $("#restorePreview").textContent = `Restore failed: ${error.message}`;
+  }
+}
+
 let scanBarTimer: number | null = null;
 
 // Short synthesized "scan" sweep using the Web Audio API (no bundled asset).
@@ -227,14 +270,20 @@ $("#scanPage").addEventListener("click", async () => {
 
     finishScanBar(true);
 
+    // Surface the captured package so Download JSON Backup / Save to Browser
+    // Memory work immediately after a scan.
+    if (result.package) {
+      applyPackage(result.package);
+    }
+
     const state = result.state || {};
     const queued = state.totalTargets || state.queue?.length || 0;
 
     if (state.status === "complete" || queued === 0) {
-      setStatus("Scan complete. This page is cached for offline reading.");
+      setStatus("Scan complete. This page is cached and ready to back up or save.");
     } else {
       setStatus(
-        `Scan started — caching ${pluralPages(queued)} in the background. Open Gentle Sync Progress to watch.`
+        `Scan complete and ready to back up. Caching ${pluralPages(queued)} more in the background — open Gentle Sync Progress to watch.`
       );
     }
   } catch (error) {
@@ -316,7 +365,11 @@ $("#loadSession").addEventListener("click", async () => {
     files: data.files?.length || 0,
     restoreSteps: data.restore?.steps?.map((step) => step.label) || []
   }, null, 2);
+
+  await restoreCurrentPackageIntoArchive();
 });
+
+$("#restoreIntoReader").addEventListener("click", restoreCurrentPackageIntoArchive);
 
 $("#clearSession").addEventListener("click", async () => {
   await clearSession();
@@ -345,6 +398,8 @@ $("#restoreFile").addEventListener("change", async (event) => {
       files: data.files?.length || 0,
       restoreSteps: data.restore?.steps?.map((step: { label: string }) => step.label) || []
     }, null, 2);
+
+    await restoreCurrentPackageIntoArchive();
   } catch (error) {
     $("#restorePreview").textContent = `Invalid backup file: ${error.message}`;
   }

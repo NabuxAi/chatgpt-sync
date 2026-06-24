@@ -65,6 +65,12 @@ function cleanText(value: unknown): string {
     .trim();
 }
 
+/** Pull the conversation id out of a ChatGPT chat URL (`/c/<id>`), if present. */
+function conversationIdFromUrl(url: unknown): string {
+  const match = String(url || "").match(/\/c\/([a-zA-Z0-9-]+)/);
+  return match?.[1] || "";
+}
+
 function fallbackNow(): string {
   return new Date().toISOString();
 }
@@ -305,7 +311,17 @@ export function mergePackageIntoArchive(
     );
   }
 
-  const defaultChatUrl = sourceUrl || `${projectKey}#current`;
+  // Attach the captured messages to the canonical conversation chat URL rather
+  // than the raw page href. The page URL can carry a query string or hash (e.g.
+  // /c/<id>?model=...), but the chat record is keyed to the clean /c/<id> URL;
+  // matching by conversation id keeps messages from being orphaned.
+  const sourceConversationId = conversationIdFromUrl(sourceUrl);
+  const conversationChat = sourceConversationId
+    ? (packageData?.chats || []).find(
+        (chat) => conversationIdFromUrl(chat.url) === sourceConversationId
+      )
+    : null;
+  const defaultChatUrl = conversationChat?.url || sourceUrl || `${projectKey}#current`;
   const defaultChatKey = `${accountKey}:${defaultChatUrl}`;
   const existingMessageKeys = new Set(messages.map(messageKey));
 
