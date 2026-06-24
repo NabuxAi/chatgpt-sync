@@ -1,4 +1,4 @@
-import { buildMemoryPackage } from "./sync-core.ts";
+import { buildMemoryPackage, summarizeArchive } from "./sync-core.ts";
 import { loadSyncIntervalMinutes, SYNC_INTERVAL_KEY } from "./settings.ts";
 import { mergeAndSaveOfflineArchive } from "./offline-vault.ts";
 import { scanTabWithFallback, checkTabLogin } from "./content-script-bridge.ts";
@@ -561,9 +561,11 @@ async function handleScanNow(options: { notes?: string } = {}) {
 }
 
 // Powers the popup "Scan Page" button. It feels like a quick page scan (sound +
-// scanning bar in the popup), but it actually kicks off the thorough Gentle Sync:
-// ensure a signed-in ChatGPT tab exists, then start the gentle background job.
-async function handleScanAndSync() {
+// scanning bar in the popup), but it actually does two things: capture the
+// current page into a downloadable backup package (so Download/Save work right
+// away) AND kick off the thorough Gentle Sync background job for the rest.
+async function handleScanAndSync(options: { notes?: string } = {}) {
+  const notes = options.notes || "";
   let tab = await findChatGptTab();
 
   if (!tab?.id) {
@@ -581,9 +583,21 @@ async function handleScanAndSync() {
   const login = await getTabLoginState(tab.id);
 
   if (login.loggedIn === false) {
+    await setPendingScan(notes);
     await focusTab(tab);
     return { ok: true, status: "needs-login", tabId: tab.id };
   }
+
+  // Capture the active page now and record it so the popup can immediately
+  // download a JSON backup or save it to browser memory.
+  const packageData = await scanAndCacheTab(tab, { notes });
+  await recordScanResult({
+    status: "scanned",
+    trigger: "scan-and-sync",
+    account: login.account || null,
+    package: packageData
+  });
+  await clearPendingScan();
 
   // Logged in (or login state unknown): start the gentle deep sync from this tab.
   const state = await startGentleDeepSyncFromActiveTab();
@@ -592,6 +606,7 @@ async function handleScanAndSync() {
     ok: true,
     status: "started",
     account: login.account || null,
+    package: packageData,
     state
   };
 }
@@ -705,8 +720,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "CHATGPT_SYNC_RUN_DEEP_SYNC") {
     startGentleDeepSyncFromActiveTab()
-      .then((result) => {
-        sendResponse({ ok: true, gentle: true, ...result });
+      .then((state) => {
+        sendResponse({ ok: true, gentle: true, state });
+      })
+      .catch((error) => {
+        sendResponse({ ok: false, error: error.message });
+      });
+
+    return true;
+  }
+
+  if (message?.type === "CHATGPT_SYNC_IMPORT_PACKAGE") {
+    const packageData = message.package as MemoryPackage | undefined;
+
+    if (!packageData || typeof packageData !== "object") {
+      sendResponse({ ok: false, error: "No backup package to import." });
+      return true;
+    }
+
+    mergeAndSaveOfflineArchive(packageData, {
+      now: new Date().toISOString()
+    })
+      .then((archive) => {
+        sendResponse({ ok: true, summary: summarizeArchive(archive) });
       })
       .catch((error) => {
         sendResponse({ ok: false, error: error.message });
@@ -728,7 +764,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "CHATGPT_SYNC_SCAN_AND_SYNC") {
-    handleScanAndSync()
+    handleScanAndSync({ notes: message.notes })
       .then((result) => {
         sendResponse(result);
       })

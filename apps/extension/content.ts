@@ -460,20 +460,42 @@
     };
   }
 
+  // Reads the short-lived access token from the same-session auth endpoint.
+  // ChatGPT's backend-api requires `Authorization: Bearer <accessToken>` in
+  // addition to cookies; without it the conversation request 401s. The token is
+  // used for this single same-origin request only and is never stored or sent
+  // anywhere else.
+  async function fetchAccessToken(): Promise<string> {
+    try {
+      const response = await fetch("/api/auth/session", {
+        credentials: "include",
+        headers: { accept: "application/json" }
+      });
+
+      if (!response.ok) return "";
+
+      const data = await response.json().catch(() => ({}));
+      return cleanText(data?.accessToken);
+    } catch (_error) {
+      return "";
+    }
+  }
+
   async function scanBackendConversation() {
     const conversationId = extractConversationId();
     if (!conversationId || !window.location.hostname.includes("chatgpt.com")) {
       return null;
     }
 
-    const targetPath = `/backend-api/conversation/${conversationId}`;
-    const response = await fetch(targetPath, {
+    const accessToken = await fetchAccessToken();
+    const headers: Record<string, string> = { accept: "*/*" };
+    if (accessToken) {
+      headers.authorization = `Bearer ${accessToken}`;
+    }
+
+    const response = await fetch(`/backend-api/conversation/${conversationId}`, {
       credentials: "include",
-      headers: {
-        accept: "*/*",
-        "x-openai-target-path": targetPath,
-        "x-openai-target-route": "/backend-api/conversation/{conversation_id}"
-      }
+      headers
     });
 
     if (!response.ok) {
